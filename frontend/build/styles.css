@@ -32,10 +32,10 @@ body {
 /* Component layout */
 .wrap { font-size: 1.12rem; line-height: 1.7; color: #111 !important; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; color: #111 !important; }
-.seg { white-space: pre-wrap; color: #111 !important; }
-
-.bank {
-  display: flex; flex-wrap: wrap; gap: 8px; margin: .5rem 0 .75rem 0;
+.seg { 
+  white-space: pre-wrap; 
+  color: black !important;   /* force visible text */
+  font-weight: 400;
 }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
