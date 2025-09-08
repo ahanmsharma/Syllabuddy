@@ -4,6 +4,7 @@ import re
 import random
 from typing import Dict, List, Optional, Tuple
 import streamlit as st
+from streamlit_sortables import sort_items  # NEW: true drag & drop
 
 # ================== FLAGS ==================
 FORCE_PLACEHOLDERS = True  # keep AI off while you refine UX
@@ -22,40 +23,30 @@ st.markdown(
       .box-label { font-weight: 600; color: #555; margin: .25rem 0 .35rem 0; }
       .thin-divider { border-top: 1px solid #e6e6e6; margin: .7rem 0; }
 
-      /* Cloze inline styling */
-      .cloze-wrap { font-size: 1.12rem; line-height: 1.7; display: flex; flex-wrap: wrap; align-items: center; }
-      .seg { margin-right: .25rem; }
-      .blank {
+      /* Cloze sentence */
+      .cloze-row { display:flex; flex-wrap:wrap; align-items:center; gap:.25rem; font-size:1.12rem; line-height:1.7; }
+      .seg { white-space:pre-wrap; }
+      .dropzone {
+        min-width: 10ch; max-width: 32ch;
+        min-height: 2.2rem;
         display:inline-flex; align-items:center; justify-content:center;
-        min-width: 8ch; padding: 2px 8px; border-bottom: 2px solid #9aa0a6;
-        margin: 0 .25rem; border-radius: 6px;
-        background: #fafafa;
-        transition: background .15s ease, border-color .15s ease;
+        padding: 2px 8px;
+        border: 2px dashed #9aa0a6; border-radius: 8px;
+        background:#fafafa;
       }
-      .blank.filled { background: #eef7ff; border-color: #5b9bff; }
-      .blank.correct { border-color: #16a34a; }
-      .blank.wrong { border-color: #dc2626; }
-      .tick { color: #16a34a; font-weight: 700; margin-left: 6px; }
-      .cross { color: #dc2626; font-weight: 700; margin-left: 6px; }
-
-      .chips { margin-top: .5rem; display:flex; flex-wrap: wrap; gap: 8px; }
-      .chip {
-        display:inline-flex; align-items:center; gap:6px;
-        border:1px solid #d0d7de; border-radius: 999px;
-        padding: 4px 10px; cursor:pointer; user-select: none; background: #fff;
-      }
-      .chip:hover { background: #f7fafc; }
-
-      /* Feedback border container */
+      .dropzone.filled { border-style: solid; background:#eef7ff; border-color:#5b9bff; }
+      .dropzone.correct { border-color:#16a34a; }
+      .dropzone.wrong { border-color:#dc2626; }
+      .bank { display:flex; flex-wrap:wrap; gap:8px; }
+      .bank-label { font-size:.95rem; color:#666; margin-bottom:.25rem; }
       .feedback { border: 3px solid transparent; border-radius: 12px; padding: 12px; }
-      .feedback.good { animation: flashGreen 2.2s ease 1; border-color: #22c55e; }
-      .feedback.mixed { border-image-slice: 1; border-width: 3px; border-style: solid;
-                        border-image-source: linear-gradient(90deg, #dc2626 var(--badpct,30%), #22c55e var(--badpct,30%));
-                        animation: flashMix 2.2s ease 1; }
-      @keyframes flashGreen { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.35)} 60%{box-shadow:0 0 0 6px rgba(34,197,94,.0)} 100%{box-shadow:none} }
-      @keyframes flashMix   { 0%{box-shadow:0 0 0 0 rgba(220,38,38,.25)} 60%{box-shadow:0 0 0 6px rgba(220,38,38,.0)} 100%{box-shadow:none} }
-
-      .rating-row { margin-top: .4rem; }
+      .feedback.good { border-color: #22c55e; }
+      .feedback.mixed {
+        border-image-slice:1; border-width:3px; border-style:solid;
+        border-image-source: linear-gradient(90deg, #dc2626 var(--badpct,30%), #22c55e var(--badpct,30%));
+      }
+      .tick { color:#16a34a; font-weight:700; margin-left:6px; }
+      .cross { color:#dc2626; font-weight:700; margin-left:6px; }
       .guard { background:#fff8e1; border:1px solid #f59e0b; padding:12px; border-radius:10px; }
       .guard h4 { margin:0 0 8px 0; }
     </style>
@@ -136,7 +127,7 @@ def suggested_lists(dotpoint: str, user_answer: str) -> Dict:
     payload["suggested_strengths"]  = payload.get("suggested_strengths",  [])[:5]
     return payload
 
-BLANK_PATTERN = re.compile(r"\[\[(.+?)\]\]")
+BLANK_RE = re.compile(r"\[\[(.+?)\]\]")
 
 def placeholder_cloze(level:int=0) -> str:
     if level==0:
@@ -155,9 +146,9 @@ One cloze sentence with 1–4 [[blanks]]; short and precise.
 JSON: {{"cloze":"..."}}"""}], model=MODEL_MINI, temperature=0.2)
     return (payload.get("cloze") or placeholder_cloze(specificity)).strip()
 
-def parse_cloze(cloze: str) -> Tuple[List[str], List[str]]:
-    answers = BLANK_PATTERN.findall(cloze)
-    parts = BLANK_PATTERN.split(cloze)  # [seg0, ans1, seg1, ans2, seg2...]
+def split_cloze(cloze: str) -> Tuple[List[str], List[str]]:
+    answers = BLANK_RE.findall(cloze)
+    parts = BLANK_RE.split(cloze)  # [seg0, ans1, seg1, ans2, seg2...]
     segments = [parts[0]]
     for i in range(1, len(parts), 2):
         segments.append(parts[i+1] if i+1 < len(parts) else "")
@@ -174,9 +165,9 @@ def reset_flow():
     st.session_state.current_cloze = None
     st.session_state.cloze_specificity = 0
     st.session_state.last_cloze_result = None
-    st.session_state.inline_fills = {}   # blank_index -> token string
-    st.session_state.bank_tokens = []    # available chips
-    st.session_state.nav_guard = None    # {"target": (subject,module,iq,dotpoint)}
+    st.session_state.nav_guard = None
+    st.session_state.dnd_lists = None  # dict: {"bank":[...], "blank1":[..], "blank2":[..] ...}
+    st.session_state.correct_flags = None
 
 if "stage" not in st.session_state:
     reset_flow()
@@ -192,14 +183,12 @@ with st.sidebar:
     current_dp = st.session_state.get("selected_dp")
     target_tuple = (subject, module, iq, chosen_dp)
 
-    # If attempting to change away from current dp mid-activity, raise guard
     if current_dp is not None and current_dp != target_tuple and st.session_state.stage in ("fp","report","cloze","post_cloze","fp_followups"):
         st.session_state.nav_guard = {"target": target_tuple}
     else:
-        # set current selection (first time or same dp)
         st.session_state.selected_dp = target_tuple
 
-# Guard UI on main area if pending navigation
+# Guard UI
 if st.session_state.nav_guard:
     st.markdown('<div class="guard">', unsafe_allow_html=True)
     st.markdown("### Heads up")
@@ -207,7 +196,7 @@ if st.session_state.nav_guard:
     colg = st.columns([1,1,1])
     with colg[0]:
         if st.button("Save as incomplete (SRS next)", use_container_width=True):
-            # TODO: record incomplete + schedule in SRS
+            # TODO: persist as incomplete + SRS
             reset_flow()
             st.session_state.selected_dp = st.session_state.nav_guard["target"]
             st.session_state.nav_guard = None
@@ -215,16 +204,14 @@ if st.session_state.nav_guard:
     with colg[1]:
         rating_tmp = st.slider("Mark complete (rate 0–10)", 0, 10, 7)
         if st.button("Save & schedule", use_container_width=True):
-            # TODO: record complete+rating and schedule in SRS
+            # TODO: persist rating + SRS
             reset_flow()
             st.session_state.selected_dp = st.session_state.nav_guard["target"]
             st.session_state.nav_guard = None
             st.rerun()
     with colg[2]:
         if st.button("Cancel", use_container_width=True):
-            # cancel navigation attempt
             st.session_state.nav_guard = None
-            # revert sidebar radios to current selection
             subj, mod, iqx, dp = st.session_state.selected_dp
             st.session_state.nav_subj = subj
             st.session_state.nav_mod  = mod
@@ -241,9 +228,13 @@ subject, module, iq, dotpoint = st.session_state.selected_dp
 st.markdown(f'<div class="dotpoint">{dotpoint}</div>', unsafe_allow_html=True)
 
 # ================== STAGES ==================
+def go_stage(name: str):
+    st.session_state.stage = name
+    st.rerun()
+
 # ----- FP -----
-if st.session_state.stage == "fp":
-    if not st.session_state.fp_q:
+def do_fp():
+    if not st.session_state.get("fp_q"):
         st.session_state.fp_q = generate_fp_question(dotpoint)
     st.markdown(f'<div class="fpq">{st.session_state.fp_q}</div>', unsafe_allow_html=True)
 
@@ -255,11 +246,10 @@ if st.session_state.stage == "fp":
         sug = suggested_lists(dotpoint, st.session_state.user_blurt)
         st.session_state.reports = {"weaknesses":"; ".join(sug.get("suggested_weaknesses",[])),
                                     "strengths":"; ".join(sug.get("suggested_strengths",[]))}
-        st.session_state.stage = "report"
-        st.rerun()
+        go_stage("report")
 
 # ----- REPORT -----
-elif st.session_state.stage == "report":
+def do_report():
     c1, c2 = st.columns(2, gap="large")
     with c1:
         st.markdown('<div class="box-label">AI Weakness report</div>', unsafe_allow_html=True)
@@ -278,108 +268,115 @@ elif st.session_state.stage == "report":
             st.session_state.weak_index = 0
             st.session_state.current_cloze = None
             st.session_state.cloze_specificity = 0
-            st.session_state.inline_fills = {}
-            st.session_state.bank_tokens = []
-            st.session_state.stage = "cloze" if st.session_state.weak_list else "fp"
-            st.rerun()
+            st.session_state.dnd_lists = None
+            st.session_state.correct_flags = None
+            if st.session_state.weak_list:
+                go_stage("cloze")
+            else:
+                go_stage("fp")
 
-# ----- CLOZE (inline blanks + click-to-place chips, single bottom submit) -----
-elif st.session_state.stage == "cloze":
+# ----- CLOZE (true DnD with streamlit-sortables, persistent feedback until Continue) -----
+def init_cloze_lists(answers: List[str]):
+    # Build list-of-lists for sortables: first is the bank, then one list per blank
+    bank = answers[:]  # start with all tokens in bank (scrambled)
+    random.shuffle(bank)
+    lists = [bank] + [[] for _ in answers]
+    return lists
+
+def do_cloze():
     if st.session_state.weak_index >= len(st.session_state.weak_list):
         st.success("All listed weaknesses processed. (Next: FP follow-ups / rating / exam.)")
-        st.session_state.stage = "fp"
-        st.rerun()
-
+        go_stage("fp")
     current_weak = st.session_state.weak_list[st.session_state.weak_index]
+
+    # Prepare cloze
     if not st.session_state.current_cloze:
         st.session_state.current_cloze = generate_cloze(dotpoint, current_weak, st.session_state.cloze_specificity)
-        # seed tokens for this cloze
-        _, answers = parse_cloze(st.session_state.current_cloze)
-        st.session_state.bank_tokens = random.sample(answers, k=len(answers))  # scramble
-        st.session_state.inline_fills = {i+1: "" for i in range(len(answers))}
+        st.session_state.correct_flags = None
+        st.session_state.feedback_class = None
 
-    # Inline rendering
-    segments, answers = parse_cloze(st.session_state.current_cloze)
+    segs, answers = split_cloze(st.session_state.current_cloze)
+    n_blanks = len(answers)
+    if st.session_state.dnd_lists is None:
+        st.session_state.dnd_lists = init_cloze_lists(answers)
+
     st.markdown(f'<div class="box-label">Targeting: {current_weak}</div>', unsafe_allow_html=True)
-    with st.container(border=True, key=f"clozebox_{st.session_state.weak_index}"):
-        st.markdown('<div class="cloze-wrap">', unsafe_allow_html=True)
 
-        # Build a row of alternating segment text and inline blanks
-        # Use columns in small chunks to keep things inline visually
-        for i, _ans in enumerate(answers, start=1):
-            # segment text
-            st.write(segments[i-1], unsafe_allow_html=False)
-            # inline blank (display current fill)
-            current_val = st.session_state.inline_fills.get(i, "")
-            disp = current_val if current_val else " "
-            colb = st.columns([1])[0]
-            # show as markdown span with CSS; below it, tiny buttons to clear/fill are in chips area
-            st.markdown(f'<span class="blank {"filled" if current_val else ""}">{disp}</span>', unsafe_allow_html=True)
-        # trailing segment
-        st.write(segments[-1], unsafe_allow_html=False)
-        st.markdown('</div>', unsafe_allow_html=True)
+    # If we already submitted, show feedback border & ticks/crosses; else plain
+    if st.session_state.correct_flags is not None:
+        c = sum(st.session_state.correct_flags)
+        bad_pct = int((n_blanks - c) / max(1, n_blanks) * 100)
+        klass = "good" if c == n_blanks else "mixed"
+        st.markdown(f'<div class="feedback {klass}" style="--badpct:{bad_pct}%">', unsafe_allow_html=True)
 
-        # Chips below (click to place into next empty or re-add from blanks)
-        st.markdown('<div class="chips">', unsafe_allow_html=True)
-        chip_cols = st.columns(min(6, max(1, len(st.session_state.bank_tokens))))
-        for idx, tok in enumerate(st.session_state.bank_tokens):
-            with chip_cols[idx % len(chip_cols)]:
-                if st.button(tok, key=f"chip_{idx}", use_container_width=False):
-                    # place into next empty blank
-                    for j in range(1, len(answers)+1):
-                        if not st.session_state.inline_fills[j]:
-                            st.session_state.inline_fills[j] = tok
-                            # remove from bank
-                            st.session_state.bank_tokens.pop(idx)
-                            st.rerun()
-                            break
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Inline row: seg0, drop1, seg1, drop2, ...
+    st.markdown('<div class="cloze-row">', unsafe_allow_html=True)
 
-        # Let user “drag off into nothing”: click a filled blank to return token to bank
-        # Render small “clear” buttons inline for blanks (simulating remove)
-        clear_cols = st.columns(len(answers))
-        for j in range(1, len(answers)+1):
-            with clear_cols[j-1]:
-                if st.session_state.inline_fills[j]:
-                    if st.button(f"↩︎ {st.session_state.inline_fills[j]}", key=f"clr_{j}", help="Remove from blank"):
-                        st.session_state.bank_tokens.append(st.session_state.inline_fills[j])
-                        st.session_state.inline_fills[j] = ""
-                        st.rerun()
+    # Render BANK at top (label + sortables)
+    st.markdown('<div class="bank-label">Words</div>', unsafe_allow_html=True)
+    dnd_input = [lst[:] for lst in st.session_state.dnd_lists]  # deep copy for component
+    dnd_result = sort_items(
+        dnd_input,
+        multi_containers=True,
+        direction="horizontal",
+        key=f"dnd_{st.session_state.weak_index}",
+        # NOTE: streamlit-sortables options are intentionally simple for reliability on Cloud
+    )
+    # dnd_result is list-of-lists: [bank, blank1, blank2, ...]
+    # Persist it:
+    st.session_state.dnd_lists = [lst[:] for lst in dnd_result]
 
-        # Single submit at bottom
-        submitted = st.button("Submit", type="primary", use_container_width=True)
+    # Now draw the sentence underneath with dropzone styles + ✓/✗ if submitted
+    # Recompose inline visuals: seg + drop + seg + drop ...
+    # (We just show visuals; actual lists are managed by sort_items above)
+    st.markdown("</div>", unsafe_allow_html=True)  # close cloze-row
 
-    if submitted:
-        got = [st.session_state.inline_fills[i] for i in range(1, len(answers)+1)]
-        correct_flags = [a.strip().lower()==g.strip().lower() for a,g in zip(answers, got)]
-        num_correct = sum(correct_flags)
-        st.session_state.last_cloze_result = (num_correct, len(answers))
+    # Visualize sentence with computed fills
+    fills = [ (st.session_state.dnd_lists[i+1][0] if len(st.session_state.dnd_lists[i+1])>0 else "") for i in range(n_blanks) ]
 
-        # Visual correctness overlay (✓/✗ next to each filled blank)
-        # Re-render the sentence with correctness marks
-        bad_pct = 0 if len(answers)==0 else int((len(answers)-num_correct)/len(answers)*100)
-        container_class = "good" if num_correct==len(answers) else "mixed"
-        st.markdown(f'<div class="feedback {container_class}" style="--badpct:{bad_pct}%">', unsafe_allow_html=True)
+    # Draw sentence with blanks as styled spans and correctness marks (if submitted)
+    st.markdown('<div class="cloze-row">', unsafe_allow_html=True)
+    for i in range(n_blanks):
+        st.markdown(f'<span class="seg">{segs[i]}</span>', unsafe_allow_html=True)
+        val = fills[i]
+        filled = bool(val)
+        ok = None
+        if st.session_state.correct_flags is not None:
+            ok = (val.strip().lower() == answers[i].strip().lower())
+        dz_classes = ["dropzone"]
+        if filled: dz_classes.append("filled")
+        if ok is True: dz_classes.append("correct")
+        if ok is False: dz_classes.append("wrong")
+        mark = ""
+        if ok is True: mark = '<span class="tick">✓</span>'
+        if ok is False: mark = '<span class="cross">✗</span>'
+        show = val if val else " "
+        st.markdown(f'<span class="{" ".join(dz_classes)}">{show}{mark}</span>', unsafe_allow_html=True)
+    st.markdown(f'<span class="seg">{segs[-1]}</span>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="cloze-wrap">', unsafe_allow_html=True)
-        for i, ans in enumerate(answers, start=1):
-            st.write(segments[i-1], unsafe_allow_html=False)
-            g = st.session_state.inline_fills[i]
-            ok = ans.strip().lower()==g.strip().lower()
-            mark = '<span class="tick">✓</span>' if ok else '<span class="cross">✗</span>'
-            klass = "blank filled " + ("correct" if ok else "wrong")
-            show = g if g else " "
-            st.markdown(f'<span class="{klass}">{show}{mark}</span>', unsafe_allow_html=True)
-        st.write(segments[-1], unsafe_allow_html=False)
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Move to post-cloze (rating + add weaknesses)
-        st.session_state.stage = "post_cloze"
+    # Submit button (always at bottom)
+    submit = st.button("Submit", type="primary", use_container_width=True)
+    if submit:
+        got = fills
+        flags = [ (a.strip().lower() == (g or "").strip().lower()) for a, g in zip(answers, got) ]
+        st.session_state.correct_flags = flags
+        # Keep cloze visible with marks; do NOT advance — user must press Continue
         st.rerun()
 
+    # If we have feedback, show Continue button to proceed to post-cloze (rating, etc.)
+    if st.session_state.correct_flags is not None:
+        cont = st.button("Continue", use_container_width=True)
+        if cont:
+            # move to post_cloze
+            st.session_state.last_cloze_result = (sum(st.session_state.correct_flags), n_blanks)
+            go_stage("post_cloze")
+
+    if st.session_state.correct_flags is not None:
+        st.markdown('</div>', unsafe_allow_html=True)  # close feedback box if open
+
 # ----- POST-CLOZE (rating + add weaknesses -> branch) -----
-elif st.session_state.stage == "post_cloze":
+def do_post_cloze():
     if st.session_state.last_cloze_result:
         c, t = st.session_state.last_cloze_result
         st.info(f"Cloze score: {c}/{t}")
@@ -392,7 +389,7 @@ elif st.session_state.stage == "post_cloze":
 
     go = st.columns(3)[1].button("Continue", use_container_width=True)
     if go:
-        # Merge in new weaknesses, dedupe, cap 5
+        # Merge new weaknesses, dedupe, cap 5
         add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
         merged = st.session_state.weak_list[:]
         for w in add_list:
@@ -404,19 +401,18 @@ elif st.session_state.stage == "post_cloze":
             # another, more specific cloze on same weakness
             st.session_state.cloze_specificity = min(1, st.session_state.cloze_specificity + 1)
             st.session_state.current_cloze = None
-            st.session_state.inline_fills = {}
-            st.session_state.bank_tokens = []
-            st.session_state.stage = "cloze"
-            st.rerun()
+            st.session_state.dnd_lists = None
+            st.session_state.correct_flags = None
+            go_stage("cloze")
         else:
-            # follow-up FP questions for this weakness (placeholder)
             st.session_state.cloze_specificity = 0
             st.session_state.current_cloze = None
-            st.session_state.stage = "fp_followups"
-            st.rerun()
+            st.session_state.dnd_lists = None
+            st.session_state.correct_flags = None
+            go_stage("fp_followups")
 
-# ----- FP FOLLOW-UPS (placeholder text) -----
-elif st.session_state.stage == "fp_followups":
+# ----- FP FOLLOW-UPS (placeholder) -----
+def do_fp_followups():
     current_weak = st.session_state.weak_list[st.session_state.weak_index] if st.session_state.weak_list else "this topic"
     st.markdown(f"**Follow-up first-principles questions for:** _{current_weak}_")
     qlist = [
@@ -428,18 +424,26 @@ elif st.session_state.stage == "fp_followups":
     if st.button("Next weakness"):
         st.session_state.weak_index += 1
         st.session_state.current_cloze = None
-        st.session_state.inline_fills = {}
-        st.session_state.bank_tokens = []
+        st.session_state.dnd_lists = None
+        st.session_state.correct_flags = None
         st.session_state.cloze_specificity = 0
         if st.session_state.weak_index < len(st.session_state.weak_list):
-            st.session_state.stage = "cloze"
+            go_stage("cloze")
         else:
-            # TODO: overall dotpoint rating + exam mode handoff
             st.success("All weaknesses cleared. (Next: overall rating / exam mode).")
-            st.session_state.stage = "fp"
-        st.rerun()
+            go_stage("fp")
 
-# ----- Fallback -----
+# ================== ROUTER ==================
+stage = st.session_state.stage
+if stage == "fp":
+    do_fp()
+elif stage == "report":
+    do_report()
+elif stage == "cloze":
+    do_cloze()
+elif stage == "post_cloze":
+    do_post_cloze()
+elif stage == "fp_followups":
+    do_fp_followups()
 else:
-    st.session_state.stage = "fp"
-    st.rerun()
+    go_stage("fp")
