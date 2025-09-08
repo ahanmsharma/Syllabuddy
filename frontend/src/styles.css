@@ -1,1 +1,42 @@
+:root {
+  --border-neutral: #9aa0a6;
+  --border-filled: #5b9bff;
+  --good: #16a34a;
+  --bad: #dc2626;
+}
 
+body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+
+.wrap { font-size: 1.12rem; line-height: 1.7; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+
+.seg { white-space: pre-wrap; }
+
+.bank {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: .5rem 0 .75rem 0;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #d0d7de; border-radius: 999px;
+  padding: 4px 10px; background: #fff; cursor: grab; user-select: none;
+}
+
+.chip.dragging { opacity: .6; }
+
+.blank {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 10ch; max-width: 36ch; min-height: 2.2rem;
+  padding: 2px 8px; border: 2px dashed var(--border-neutral);
+  border-radius: 8px; background: #fafafa; transition: border-color .15s, background .15s;
+}
+
+.blank.filled { border-style: solid; background: #eef7ff; border-color: var(--border-filled); }
+.blank.correct { border-color: var(--good); }
+.blank.wrong { border-color: var(--bad); }
+
+.controls { margin-top: .6rem; display: flex; gap: 12px; }
+.btn {
+  padding: 8px 14px; border-radius: 8px; border: 1px solid #d0d7de; background: #fff; cursor: pointer;
+}
+.btn.primary { border-color: #2563eb; color: white; background: #2563eb; }
