@@ -7,12 +7,12 @@
 
 body {
   margin: 0;
-  color: #111;                 /* ensure text is visible */
+  color: #111 !important;            /* ensure visible text */
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   font-size: 16px;
 }
 
-/* Whole-page feedback frame */
+/* Whole-page feedback frame INSIDE component iframe */
 .page-frame {
   position: fixed;
   inset: 0;
@@ -30,9 +30,9 @@ body {
 }
 
 /* Component layout */
-.wrap { font-size: 1.12rem; line-height: 1.7; color: #111; }
-.row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
-.seg { white-space: pre-wrap; color: #111; }
+.wrap { font-size: 1.12rem; line-height: 1.7; color: #111 !important; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; color: #111 !important; }
+.seg { white-space: pre-wrap; color: #111 !important; }
 
 .bank {
   display: flex; flex-wrap: wrap; gap: 8px; margin: .5rem 0 .75rem 0;
@@ -41,7 +41,7 @@ body {
   display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid #d0d7de; border-radius: 999px;
   padding: 4px 10px; background: #fff; cursor: grab; user-select: none;
-  color: #111;                            /* ensure visible text */
+  color: #111 !important;                         /* visible text */
 }
 .chip.dragging { opacity: .6; }
 
@@ -50,13 +50,13 @@ body {
   min-width: 10ch; max-width: 36ch; min-height: 2.2rem;
   padding: 2px 8px; border: 2px dashed var(--border-neutral);
   border-radius: 8px; background: #fafafa; transition: border-color .15s, background .15s;
-  color: #111;                             /* ensure visible text */
+  color: #111 !important;                         /* visible text */
 }
 .blank.filled { border-style: solid; background: #eef7ff; border-color: var(--border-filled); }
 .blank.correct { border-color: var(--good); }
 .blank.wrong { border-color: var(--bad); }
 
-/* Card border around the cloze box (applied from Streamlit side) */
+/* Card border around the cloze box (applied from Streamlit) */
 .cloze-card { border: 3px solid transparent; border-radius: 12px; padding: 12px; }
 .cloze-card.good { border-color: var(--good); }
 .cloze-card.mixed {
