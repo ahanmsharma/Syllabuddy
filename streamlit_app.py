@@ -6,8 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import streamlit as st
 
 # ================== FLAGS ==================
-# Keep API disabled by default (placeholders only). Switch to False when you want live models.
-FORCE_PLACEHOLDERS = True
+FORCE_PLACEHOLDERS = True  # keep AI off while you refine UX
 
 # ================== PAGE / STYLE ==================
 st.set_page_config(page_title="", layout="wide")
@@ -16,19 +15,49 @@ st.markdown(
     <style>
       header {visibility: hidden;}
       #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+      .block-container { max-width: 1280px; margin: auto; padding-top: .2rem; }
 
-      .block-container { max-width: 1220px; margin: auto; padding-top: .2rem; }
       .dotpoint { font-weight: 700; font-size: 1.35rem; margin: .25rem 0 .65rem 0; }
       .fpq { font-size: 1.18rem; margin: 0 0 .5rem 0; }
       .box-label { font-weight: 600; color: #555; margin: .25rem 0 .35rem 0; }
       .thin-divider { border-top: 1px solid #e6e6e6; margin: .7rem 0; }
 
-      .cloze-sentence { font-size: 1.10rem; line-height: 1.6; }
-      .cloze-blank { display:inline-block; min-width: 140px; padding: 4px 8px; border-bottom: 2px solid #999; margin: 0 .25rem; }
-      .chip { display:inline-block; border: 1px solid #ccc; border-radius: 999px; padding: 4px 10px; margin: 4px 6px 0 0; cursor: pointer; }
-      .chip:hover { background: #f5f5f5; }
-      .chips-wrap { margin-top: .35rem; }
-      .inline-label { font-size: 0.9rem; color: #777; margin-right: .4rem; }
+      /* Cloze inline styling */
+      .cloze-wrap { font-size: 1.12rem; line-height: 1.7; display: flex; flex-wrap: wrap; align-items: center; }
+      .seg { margin-right: .25rem; }
+      .blank {
+        display:inline-flex; align-items:center; justify-content:center;
+        min-width: 8ch; padding: 2px 8px; border-bottom: 2px solid #9aa0a6;
+        margin: 0 .25rem; border-radius: 6px;
+        background: #fafafa;
+        transition: background .15s ease, border-color .15s ease;
+      }
+      .blank.filled { background: #eef7ff; border-color: #5b9bff; }
+      .blank.correct { border-color: #16a34a; }
+      .blank.wrong { border-color: #dc2626; }
+      .tick { color: #16a34a; font-weight: 700; margin-left: 6px; }
+      .cross { color: #dc2626; font-weight: 700; margin-left: 6px; }
+
+      .chips { margin-top: .5rem; display:flex; flex-wrap: wrap; gap: 8px; }
+      .chip {
+        display:inline-flex; align-items:center; gap:6px;
+        border:1px solid #d0d7de; border-radius: 999px;
+        padding: 4px 10px; cursor:pointer; user-select: none; background: #fff;
+      }
+      .chip:hover { background: #f7fafc; }
+
+      /* Feedback border container */
+      .feedback { border: 3px solid transparent; border-radius: 12px; padding: 12px; }
+      .feedback.good { animation: flashGreen 2.2s ease 1; border-color: #22c55e; }
+      .feedback.mixed { border-image-slice: 1; border-width: 3px; border-style: solid;
+                        border-image-source: linear-gradient(90deg, #dc2626 var(--badpct,30%), #22c55e var(--badpct,30%));
+                        animation: flashMix 2.2s ease 1; }
+      @keyframes flashGreen { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.35)} 60%{box-shadow:0 0 0 6px rgba(34,197,94,.0)} 100%{box-shadow:none} }
+      @keyframes flashMix   { 0%{box-shadow:0 0 0 0 rgba(220,38,38,.25)} 60%{box-shadow:0 0 0 6px rgba(220,38,38,.0)} 100%{box-shadow:none} }
+
+      .rating-row { margin-top: .4rem; }
+      .guard { background:#fff8e1; border:1px solid #f59e0b; padding:12px; border-radius:10px; }
+      .guard h4 { margin:0 0 8px 0; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -42,19 +71,15 @@ def load_syllabus() -> Dict:
 
 syllabus = load_syllabus()
 
-# ================== OPTIONAL OPENAI (kept, but bypassed if FORCE_PLACEHOLDERS) ==================
+# ================== OPTIONAL OPENAI (disabled while FORCE_PLACEHOLDERS) ==================
 def _safe_secret(key: str) -> Optional[str]:
-    try:
-        return st.secrets[key]
-    except Exception:
-        return None
+    try: return st.secrets[key]
+    except Exception: return None
 
 def get_openai_client():
-    if FORCE_PLACEHOLDERS:
-        return None, None, None
+    if FORCE_PLACEHOLDERS: return None, None, None
     api_key = os.getenv("OPENAI_API_KEY") or _safe_secret("OPENAI_API_KEY")
-    if not api_key:
-        return None, None, None
+    if not api_key: return None, None, None
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
@@ -65,12 +90,9 @@ def get_openai_client():
 client, MODEL_MINI, MODEL_NANO = get_openai_client()
 
 def chat_json(messages, model: str, temperature: float = 0.2) -> Dict:
-    if client is None:
-        return {}
+    if client is None: return {}
     try:
-        resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=temperature
-        )
+        resp = client.chat.completions.create(model=model, messages=messages, temperature=temperature)
         text = resp.choices[0].message.content.strip()
         if text.startswith("```"):
             lines = text.splitlines()
@@ -82,224 +104,161 @@ def chat_json(messages, model: str, temperature: float = 0.2) -> Dict:
     except Exception:
         return {}
 
-# ================== HELPERS: FP / Reports / Cloze ==================
+# ================== HELPERS: FP / Lists / Cloze ==================
 def heuristic_fp(dotpoint: str) -> str:
     return (
-        f"From first principles, explain the mechanism for “{dotpoint}”, "
-        f"state key assumptions and limiting cases, and justify each step "
-        f"so that the result would still be correct under small variations in conditions."
+        f"From first principles, derive/explain the mechanism for “{dotpoint}”, "
+        f"state key assumptions and limiting cases, and justify each step with causal reasoning."
     )
 
 def generate_fp_question(dotpoint: str) -> str:
     if FORCE_PLACEHOLDERS or client is None:
         return heuristic_fp(dotpoint)
-    payload = chat_json(
-        [
-            {"role": "system", "content": "Return JSON only."},
-            {"role": "user", "content": f"""
-One *first-principles* question only.
-
-Dotpoint: "{dotpoint}"
-
+    payload = chat_json([
+        {"role":"system","content":"Return JSON only."},
+        {"role":"user","content":f"""One first-principles question. Dotpoint: "{dotpoint}"
 - Probe mechanism/derivation/causal chain
 - Mention assumptions or limits if relevant
 - One sentence; exam-ready
-
-JSON: {{"question":"..."}}
-"""}],
-        model=MODEL_MINI, temperature=0.2
-    )
+JSON: {{"question":"..."}}"""}], model=MODEL_MINI, temperature=0.2)
     return payload.get("question") or heuristic_fp(dotpoint)
 
 def suggested_lists(dotpoint: str, user_answer: str) -> Dict:
     if FORCE_PLACEHOLDERS or client is None:
-        return {
-            "suggested_weaknesses": ["unclear mechanism", "definition gap", "weak example"],
-            "suggested_strengths": ["correct terms", "coherent structure"]
-        }
-    payload = chat_json(
-        [
-            {"role": "system", "content": "Return JSON only. ≤5 items per list, 2–6 words each."},
-            {"role": "user", "content": f"""
-Dotpoint: "{dotpoint}"
-Student answer: "{user_answer}"
-
-Return:
-{{"suggested_weaknesses":["..."],"suggested_strengths":["..."]}}
-"""}],
-        model=MODEL_NANO, temperature=0.2
-    )
-    if not payload:
-        return {"suggested_weaknesses": ["definition gap"], "suggested_strengths": ["clear terms"]}
+        return {"suggested_weaknesses":["definition gap","unclear mechanism","weak example"],
+                "suggested_strengths":["correct terms","coherent structure"]}
+    payload = chat_json([
+        {"role":"system","content":"Return JSON only. ≤5 items per list, 2–6 words each."},
+        {"role":"user","content":f'Dotpoint: "{dotpoint}" Student answer: "{user_answer}" JSON: {{"suggested_weaknesses":["..."],"suggested_strengths":["..."]}}'}],
+        model=MODEL_NANO, temperature=0.2)
+    if not payload: return {"suggested_weaknesses":["definition gap"], "suggested_strengths":["clear terms"]}
     payload["suggested_weaknesses"] = payload.get("suggested_weaknesses", [])[:5]
-    payload["suggested_strengths"] = payload.get("suggested_strengths", [])[:5]
+    payload["suggested_strengths"]  = payload.get("suggested_strengths",  [])[:5]
     return payload
 
 BLANK_PATTERN = re.compile(r"\[\[(.+?)\]\]")
 
-def _placeholder_cloze() -> str:
-    return "Diffusion is net movement from [[higher concentration]] to [[lower concentration]] across a [[semi-permeable membrane]]."
+def placeholder_cloze(level:int=0) -> str:
+    if level==0:
+        return "Diffusion is net movement from [[higher concentration]] to [[lower concentration]] across a [[semi-permeable membrane]]."
+    return "Facilitated diffusion uses [[membrane proteins]] to move molecules down a [[concentration gradient]] without [[ATP hydrolysis]]."
 
 def generate_cloze(dotpoint: str, weakness: str, specificity: int = 0) -> str:
-    """
-    specificity: 0 = broad, 1 = narrower scaffold for same weakness
-    """
     if FORCE_PLACEHOLDERS or client is None:
-        if specificity == 0:
-            return _placeholder_cloze()
-        else:
-            return "Facilitated diffusion uses [[membrane proteins]] to move substances down a [[concentration gradient]] without [[ATP hydrolysis]]."
-    payload = chat_json(
-        [
-            {"role": "system", "content": "Return JSON only."},
-            {"role": "user", "content": f"""
-Dotpoint: "{dotpoint}"
+        return placeholder_cloze(specificity)
+    payload = chat_json([
+        {"role":"system","content":"Return JSON only."},
+        {"role":"user","content":f"""Dotpoint: "{dotpoint}"
 Target weakness: "{weakness}"
-Specificity level: {specificity}  # 0 broad, 1 narrower
-
-Write ONE cloze sentence with key terms as [[blanks]] (1–4 blanks). Short and precise.
-
-JSON: {{"cloze":"..."}}
-"""}],
-        model=MODEL_MINI, temperature=0.2
-    )
-    return (payload.get("cloze") or _placeholder_cloze()).strip()
+Specificity: {specificity}  # 0 broad, 1 narrower
+One cloze sentence with 1–4 [[blanks]]; short and precise.
+JSON: {{"cloze":"..."}}"""}], model=MODEL_MINI, temperature=0.2)
+    return (payload.get("cloze") or placeholder_cloze(specificity)).strip()
 
 def parse_cloze(cloze: str) -> Tuple[List[str], List[str]]:
     answers = BLANK_PATTERN.findall(cloze)
-    parts = BLANK_PATTERN.split(cloze)  # text, ans1, text, ans2, text...
+    parts = BLANK_PATTERN.split(cloze)  # [seg0, ans1, seg1, ans2, seg2...]
     segments = [parts[0]]
     for i in range(1, len(parts), 2):
-        segments.append(parts[i + 1] if i + 1 < len(parts) else "")
+        segments.append(parts[i+1] if i+1 < len(parts) else "")
     return segments, answers
 
-# ================== INLINE CLOZE W/ CHIPS ==================
-def render_inline_cloze(cloze: str, key_prefix: str = "cloze") -> Tuple[List[str], List[str], bool]:
-    """
-    Renders the cloze as a sentence with inline text_inputs for each [[blank]] AND
-    displays scrambled chips you can click to auto-fill the next empty blank.
-    Returns (expected_answers, user_answers, submitted)
-    """
-    segments, expected = parse_cloze(cloze)
-
-    # Prepare shuffled chips (unique, case preserved)
-    chips = expected[:]
-    random.shuffle(chips)
-
-    with st.form(key=f"{key_prefix}_form", clear_on_submit=False):
-        # Inline sentence: text + inputs
-        st.markdown('<div class="cloze-sentence">', unsafe_allow_html=True)
-        # Build the row: seg0 [input1] seg1 [input2] ...
-        # We simulate inline by writing markdown segments and rendering inputs right after.
-        # To visually keep it inline, we style inputs as "cloze-blank" via label text + CSS (approx).
-        user_vals: List[str] = []
-        for i, _exp in enumerate(expected, start=1):
-            # Print leading segment
-            st.write(segments[i-1], unsafe_allow_html=False)
-            # Inline input (label is visible for a11y but short)
-            v = st.text_input(f"Blank {i}", key=f"{key_prefix}_{i}", label_visibility="visible", placeholder="type here")
-            user_vals.append(v or "")
-        # trailing segment
-        st.write(segments[-1], unsafe_allow_html=False)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Chips row (click-to-fill next empty)
-        st.markdown('<div class="chips-wrap"><span class="inline-label">Words:</span>', unsafe_allow_html=True)
-        chip_cols = st.columns(min(6, max(1, len(chips))))
-        for idx, token in enumerate(chips):
-            col = chip_cols[idx % len(chip_cols)]
-            with col:
-                if st.form_submit_button(token):  # button per chip inside the same form
-                    # Fill next empty
-                    for j in range(len(expected)):
-                        keyj = f"{key_prefix}_{j+1}"
-                        if not st.session_state.get(keyj):
-                            st.session_state[keyj] = token
-                            break
-                    # Re-render form state
-                    st.stop()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        submitted = st.form_submit_button("Submit cloze")
-
-    return expected, [st.session_state.get(f"{key_prefix}_{i}", "") for i in range(1, len(expected)+1)], submitted
-
-def score_cloze(expected: List[str], got: List[str]) -> Tuple[int, int, List[bool]]:
-    flags = []
-    for exp, x in zip(expected, got):
-        flags.append(exp.strip().lower() == (x or "").strip().lower())
-    return sum(flags), len(expected), flags
-
 # ================== STATE ==================
-if "stage" not in st.session_state:
-    st.session_state.stage = "fp"  # 'fp' -> 'report' -> 'cloze' -> 'post_cloze'
-if "selected" not in st.session_state:
-    st.session_state.selected = {"subject": None, "module": None, "iq": None, "dotpoint": None}
-if "fp_q" not in st.session_state:
+def reset_flow():
+    st.session_state.stage = "fp"
     st.session_state.fp_q = None
-if "user_blurt" not in st.session_state:
     st.session_state.user_blurt = ""
-if "reports" not in st.session_state:
-    st.session_state.reports = {"weaknesses": "", "strengths": ""}
-if "weak_list" not in st.session_state:
+    st.session_state.reports = {"weaknesses":"", "strengths":""}
     st.session_state.weak_list = []
-if "weak_index" not in st.session_state:
     st.session_state.weak_index = 0
-if "current_cloze" not in st.session_state:
     st.session_state.current_cloze = None
-if "cloze_specificity" not in st.session_state:
     st.session_state.cloze_specificity = 0
-if "last_cloze_result" not in st.session_state:
-    st.session_state.last_cloze_result = None  # (correct,total)
+    st.session_state.last_cloze_result = None
+    st.session_state.inline_fills = {}   # blank_index -> token string
+    st.session_state.bank_tokens = []    # available chips
+    st.session_state.nav_guard = None    # {"target": (subject,module,iq,dotpoint)}
 
-# ================== SIDEBAR NAV (collapsible) ==================
+if "stage" not in st.session_state:
+    reset_flow()
+
+# ================== SIDEBAR NAV + GUARD ==================
 with st.sidebar:
     st.header("Navigation")
-    subject = st.selectbox("Subject", list(syllabus.keys()))
-    module = st.selectbox("Module", list(syllabus[subject].keys()))
-    iq = st.selectbox("Inquiry Question", list(syllabus[subject][module].keys()))
-    dotpoint = st.radio("Dotpoint", syllabus[subject][module][iq])
+    subject = st.selectbox("Subject", list(syllabus.keys()), key="nav_subj")
+    module  = st.selectbox("Module",  list(syllabus[subject].keys()), key="nav_mod")
+    iq      = st.selectbox("Inquiry Question", list(syllabus[subject][module].keys()), key="nav_iq")
+    chosen_dp = st.radio("Dotpoint", syllabus[subject][module][iq], key="nav_dp")
 
-    changed = (
-        st.session_state.selected["dotpoint"] is not None
-        and st.session_state.selected["dotpoint"] != dotpoint
-    )
-    st.session_state.selected = {"subject": subject, "module": module, "iq": iq, "dotpoint": dotpoint}
-    if changed:
-        st.session_state.stage = "fp"
-        st.session_state.fp_q = None
-        st.session_state.user_blurt = ""
-        st.session_state.reports = {"weaknesses": "", "strengths": ""}
-        st.session_state.weak_list = []
-        st.session_state.weak_index = 0
-        st.session_state.current_cloze = None
-        st.session_state.cloze_specificity = 0
-        st.session_state.last_cloze_result = None
-        st.rerun()
+    current_dp = st.session_state.get("selected_dp")
+    target_tuple = (subject, module, iq, chosen_dp)
 
-# ================== MAIN ==================
-st.markdown(f'<div class="dotpoint">{st.session_state.selected["dotpoint"]}</div>', unsafe_allow_html=True)
+    # If attempting to change away from current dp mid-activity, raise guard
+    if current_dp is not None and current_dp != target_tuple and st.session_state.stage in ("fp","report","cloze","post_cloze","fp_followups"):
+        st.session_state.nav_guard = {"target": target_tuple}
+    else:
+        # set current selection (first time or same dp)
+        st.session_state.selected_dp = target_tuple
 
-# ----- FP stage -----
+# Guard UI on main area if pending navigation
+if st.session_state.nav_guard:
+    st.markdown('<div class="guard">', unsafe_allow_html=True)
+    st.markdown("### Heads up")
+    st.write("You’re leaving this dotpoint before finishing. What should I do?")
+    colg = st.columns([1,1,1])
+    with colg[0]:
+        if st.button("Save as incomplete (SRS next)", use_container_width=True):
+            # TODO: record incomplete + schedule in SRS
+            reset_flow()
+            st.session_state.selected_dp = st.session_state.nav_guard["target"]
+            st.session_state.nav_guard = None
+            st.rerun()
+    with colg[1]:
+        rating_tmp = st.slider("Mark complete (rate 0–10)", 0, 10, 7)
+        if st.button("Save & schedule", use_container_width=True):
+            # TODO: record complete+rating and schedule in SRS
+            reset_flow()
+            st.session_state.selected_dp = st.session_state.nav_guard["target"]
+            st.session_state.nav_guard = None
+            st.rerun()
+    with colg[2]:
+        if st.button("Cancel", use_container_width=True):
+            # cancel navigation attempt
+            st.session_state.nav_guard = None
+            # revert sidebar radios to current selection
+            subj, mod, iqx, dp = st.session_state.selected_dp
+            st.session_state.nav_subj = subj
+            st.session_state.nav_mod  = mod
+            st.session_state.nav_iq   = iqx
+            st.session_state.nav_dp   = dp
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+# Resolve current context
+subject, module, iq, dotpoint = st.session_state.selected_dp
+
+# ================== MAIN TOP ==================
+st.markdown(f'<div class="dotpoint">{dotpoint}</div>', unsafe_allow_html=True)
+
+# ================== STAGES ==================
+# ----- FP -----
 if st.session_state.stage == "fp":
     if not st.session_state.fp_q:
-        st.session_state.fp_q = generate_fp_question(st.session_state.selected["dotpoint"])
+        st.session_state.fp_q = generate_fp_question(dotpoint)
     st.markdown(f'<div class="fpq">{st.session_state.fp_q}</div>', unsafe_allow_html=True)
 
     with st.form(key="fp_form", clear_on_submit=False):
         blurt = st.text_area("Your answer", key="fp_blurt", height=360, label_visibility="collapsed", placeholder="Type your answer here…")
-        submitted = st.form_submit_button("Submit")
-    if submitted:
+        submit = st.form_submit_button("Submit")
+    if submit:
         st.session_state.user_blurt = blurt or ""
-        sug = suggested_lists(st.session_state.selected["dotpoint"], st.session_state.user_blurt)
-        st.session_state.reports = {
-            "weaknesses": "; ".join(sug.get("suggested_weaknesses", [])),
-            "strengths": "; ".join(sug.get("suggested_strengths", [])),
-        }
+        sug = suggested_lists(dotpoint, st.session_state.user_blurt)
+        st.session_state.reports = {"weaknesses":"; ".join(sug.get("suggested_weaknesses",[])),
+                                    "strengths":"; ".join(sug.get("suggested_strengths",[]))}
         st.session_state.stage = "report"
         st.rerun()
 
-# ----- REPORT stage -----
+# ----- REPORT -----
 elif st.session_state.stage == "report":
     c1, c2 = st.columns(2, gap="large")
     with c1:
@@ -319,10 +278,12 @@ elif st.session_state.stage == "report":
             st.session_state.weak_index = 0
             st.session_state.current_cloze = None
             st.session_state.cloze_specificity = 0
+            st.session_state.inline_fills = {}
+            st.session_state.bank_tokens = []
             st.session_state.stage = "cloze" if st.session_state.weak_list else "fp"
             st.rerun()
 
-# ----- CLOZE stage (inline blanks + chips) -----
+# ----- CLOZE (inline blanks + click-to-place chips, single bottom submit) -----
 elif st.session_state.stage == "cloze":
     if st.session_state.weak_index >= len(st.session_state.weak_list):
         st.success("All listed weaknesses processed. (Next: FP follow-ups / rating / exam.)")
@@ -331,46 +292,107 @@ elif st.session_state.stage == "cloze":
 
     current_weak = st.session_state.weak_list[st.session_state.weak_index]
     if not st.session_state.current_cloze:
-        st.session_state.current_cloze = generate_cloze(
-            st.session_state.selected["dotpoint"],
-            current_weak,
-            specificity=st.session_state.cloze_specificity,
-        )
+        st.session_state.current_cloze = generate_cloze(dotpoint, current_weak, st.session_state.cloze_specificity)
+        # seed tokens for this cloze
+        _, answers = parse_cloze(st.session_state.current_cloze)
+        st.session_state.bank_tokens = random.sample(answers, k=len(answers))  # scramble
+        st.session_state.inline_fills = {i+1: "" for i in range(len(answers))}
 
+    # Inline rendering
+    segments, answers = parse_cloze(st.session_state.current_cloze)
     st.markdown(f'<div class="box-label">Targeting: {current_weak}</div>', unsafe_allow_html=True)
-    expected, user_vals, submitted = render_inline_cloze(
-        st.session_state.current_cloze, key_prefix=f"clz_{st.session_state.weak_index}"
-    )
+    with st.container(border=True, key=f"clozebox_{st.session_state.weak_index}"):
+        st.markdown('<div class="cloze-wrap">', unsafe_allow_html=True)
+
+        # Build a row of alternating segment text and inline blanks
+        # Use columns in small chunks to keep things inline visually
+        for i, _ans in enumerate(answers, start=1):
+            # segment text
+            st.write(segments[i-1], unsafe_allow_html=False)
+            # inline blank (display current fill)
+            current_val = st.session_state.inline_fills.get(i, "")
+            disp = current_val if current_val else " "
+            colb = st.columns([1])[0]
+            # show as markdown span with CSS; below it, tiny buttons to clear/fill are in chips area
+            st.markdown(f'<span class="blank {"filled" if current_val else ""}">{disp}</span>', unsafe_allow_html=True)
+        # trailing segment
+        st.write(segments[-1], unsafe_allow_html=False)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Chips below (click to place into next empty or re-add from blanks)
+        st.markdown('<div class="chips">', unsafe_allow_html=True)
+        chip_cols = st.columns(min(6, max(1, len(st.session_state.bank_tokens))))
+        for idx, tok in enumerate(st.session_state.bank_tokens):
+            with chip_cols[idx % len(chip_cols)]:
+                if st.button(tok, key=f"chip_{idx}", use_container_width=False):
+                    # place into next empty blank
+                    for j in range(1, len(answers)+1):
+                        if not st.session_state.inline_fills[j]:
+                            st.session_state.inline_fills[j] = tok
+                            # remove from bank
+                            st.session_state.bank_tokens.pop(idx)
+                            st.rerun()
+                            break
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Let user “drag off into nothing”: click a filled blank to return token to bank
+        # Render small “clear” buttons inline for blanks (simulating remove)
+        clear_cols = st.columns(len(answers))
+        for j in range(1, len(answers)+1):
+            with clear_cols[j-1]:
+                if st.session_state.inline_fills[j]:
+                    if st.button(f"↩︎ {st.session_state.inline_fills[j]}", key=f"clr_{j}", help="Remove from blank"):
+                        st.session_state.bank_tokens.append(st.session_state.inline_fills[j])
+                        st.session_state.inline_fills[j] = ""
+                        st.rerun()
+
+        # Single submit at bottom
+        submitted = st.button("Submit", type="primary", use_container_width=True)
+
     if submitted:
-        correct, total, flags = score_cloze(expected, user_vals)
-        st.session_state.last_cloze_result = (correct, total)
-        if correct == total:
-            st.success("Perfect.")
-        else:
-            wrongs = [str(i+1) for i, ok in enumerate(flags) if not ok]
-            st.error(f"Incorrect blanks: {', '.join(wrongs)}.")
-        # move to post-cloze rating stage
+        got = [st.session_state.inline_fills[i] for i in range(1, len(answers)+1)]
+        correct_flags = [a.strip().lower()==g.strip().lower() for a,g in zip(answers, got)]
+        num_correct = sum(correct_flags)
+        st.session_state.last_cloze_result = (num_correct, len(answers))
+
+        # Visual correctness overlay (✓/✗ next to each filled blank)
+        # Re-render the sentence with correctness marks
+        bad_pct = 0 if len(answers)==0 else int((len(answers)-num_correct)/len(answers)*100)
+        container_class = "good" if num_correct==len(answers) else "mixed"
+        st.markdown(f'<div class="feedback {container_class}" style="--badpct:{bad_pct}%">', unsafe_allow_html=True)
+
+        st.markdown('<div class="cloze-wrap">', unsafe_allow_html=True)
+        for i, ans in enumerate(answers, start=1):
+            st.write(segments[i-1], unsafe_allow_html=False)
+            g = st.session_state.inline_fills[i]
+            ok = ans.strip().lower()==g.strip().lower()
+            mark = '<span class="tick">✓</span>' if ok else '<span class="cross">✗</span>'
+            klass = "blank filled " + ("correct" if ok else "wrong")
+            show = g if g else " "
+            st.markdown(f'<span class="{klass}">{show}{mark}</span>', unsafe_allow_html=True)
+        st.write(segments[-1], unsafe_allow_html=False)
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Move to post-cloze (rating + add weaknesses)
         st.session_state.stage = "post_cloze"
         st.rerun()
 
-# ----- POST-CLOZE: rating + add weaknesses -> branch to next activity -----
+# ----- POST-CLOZE (rating + add weaknesses -> branch) -----
 elif st.session_state.stage == "post_cloze":
-    # Show result
     if st.session_state.last_cloze_result:
         c, t = st.session_state.last_cloze_result
         st.info(f"Cloze score: {c}/{t}")
 
-    # Rate understanding of this cloze
     colA, colB = st.columns([1,1])
     with colA:
-        rating = st.slider("Rate your understanding of this topic (0–10)", 0, 10, 6, key="cloze_rating")
+        rating = st.slider("Rate your understanding (0–10)", 0, 10, 6, key="cloze_rating")
     with colB:
         more_w = st.text_input("Add more weaknesses (semicolon-separated):", key="more_wk")
 
-    # Action: continue
     go = st.columns(3)[1].button("Continue", use_container_width=True)
     if go:
-        # Merge new weaknesses (dedupe, keep ≤5 total)
+        # Merge in new weaknesses, dedupe, cap 5
         add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
         merged = st.session_state.weak_list[:]
         for w in add_list:
@@ -378,43 +400,42 @@ elif st.session_state.stage == "post_cloze":
                 merged.append(w)
         st.session_state.weak_list = merged[:5]
 
-        # Branching:
         if rating <= 6:
-            # Stay on same weakness; create a more specific cloze
-            st.warning("Targeting with a more specific cloze.")
+            # another, more specific cloze on same weakness
             st.session_state.cloze_specificity = min(1, st.session_state.cloze_specificity + 1)
             st.session_state.current_cloze = None
+            st.session_state.inline_fills = {}
+            st.session_state.bank_tokens = []
             st.session_state.stage = "cloze"
             st.rerun()
         else:
-            # Progress to FP follow-ups for the same weakness (placeholder for now)
+            # follow-up FP questions for this weakness (placeholder)
             st.session_state.cloze_specificity = 0
             st.session_state.current_cloze = None
             st.session_state.stage = "fp_followups"
             st.rerun()
 
-# ----- FP FOLLOW-UPS (per-weakness; placeholder Qs now) -----
+# ----- FP FOLLOW-UPS (placeholder text) -----
 elif st.session_state.stage == "fp_followups":
     current_weak = st.session_state.weak_list[st.session_state.weak_index] if st.session_state.weak_list else "this topic"
     st.markdown(f"**Follow-up first-principles questions for:** _{current_weak}_")
-    # Placeholder FP follow-ups (you can add AI generation later)
     qlist = [
-        f"Derive the key relationship involved in {current_weak}, starting from definitions and conservation laws.",
-        f"Explain how the mechanism would change for an extreme boundary case in {current_weak}."
+        f"Derive the governing relationship for {current_weak}, starting only from definitions and conservation principles.",
+        f"Explain how {current_weak} behaves under an extreme boundary case, and justify each step of your reasoning."
     ]
-    for q in qlist:
-        st.write("• " + q)
+    for q in qlist: st.write("• " + q)
 
-    # After follow-ups, advance to next weakness (for now)
     if st.button("Next weakness"):
         st.session_state.weak_index += 1
         st.session_state.current_cloze = None
+        st.session_state.inline_fills = {}
+        st.session_state.bank_tokens = []
         st.session_state.cloze_specificity = 0
-        # More weaknesses left? back to cloze; else back to FP (later: rating/exam stage)
         if st.session_state.weak_index < len(st.session_state.weak_list):
             st.session_state.stage = "cloze"
         else:
-            st.success("All weaknesses cleared for now. (Next: overall rating / exam mode in a later step.)")
+            # TODO: overall dotpoint rating + exam mode handoff
+            st.success("All weaknesses cleared. (Next: overall rating / exam mode).")
             st.session_state.stage = "fp"
         st.rerun()
 
