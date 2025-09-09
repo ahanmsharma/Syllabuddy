@@ -1,5 +1,6 @@
 import streamlit as st
 from typing import List
+from common.ui import topbar, safe_rerun
 
 def _data():
     return (
@@ -37,7 +38,7 @@ def add_all_dps(subject: str, module: str, iq: str, on: bool, DPS):
 # ---- cards ----
 def subject_cards(key_prefix: str, back_to: str | None):
     SUBJECTS, MODS, IQS, DPS, go = _data()
-    if back_to: from common.ui import topbar; topbar("Choose Subject", back_to=back_to)
+    if back_to: topbar("Choose Subject", back_to=back_to)
     else: st.title("Choose Subject")
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
 
@@ -60,10 +61,9 @@ def subject_cards(key_prefix: str, back_to: str | None):
                     if st.button(("Unselect" if selected else "Select"),
                                  key=f"{key_prefix}_sel_{i}", use_container_width=True):
                         add_all_modules(s, on=not selected, MODS=MODS, IQS=IQS, DPS=DPS)
-                        st.rerun()
+                        safe_rerun()
 
 def module_cards(subject: str, key_prefix: str, back_to: str):
-    from common.ui import topbar
     SUBJECTS, MODS, IQS, DPS, go = _data()
     topbar(f"{subject} — Modules", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
@@ -87,10 +87,9 @@ def module_cards(subject: str, key_prefix: str, back_to: str):
                     if st.button(("Unselect" if selected else "Select"),
                                  key=f"{key_prefix}_mod_sel_{i}", use_container_width=True):
                         add_all_iqs(subject, m, on=not selected, IQS=IQS, DPS=DPS)
-                        st.rerun()
+                        safe_rerun()
 
 def iq_cards(subject: str, module: str, key_prefix: str, back_to: str):
-    from common.ui import topbar
     SUBJECTS, MODS, IQS, DPS, go = _data()
     topbar(f"{subject} → {module} — IQs", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
@@ -114,10 +113,9 @@ def iq_cards(subject: str, module: str, key_prefix: str, back_to: str):
                     if st.button(("Unselect" if selected else "Select"),
                                  key=f"{key_prefix}_iq_sel_{i}", use_container_width=True):
                         add_all_dps(subject, module, iq, on=not selected, DPS=DPS)
-                        st.rerun()
+                        safe_rerun()
 
 def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to: str):
-    from common.ui import topbar
     SUBJECTS, MODS, IQS, DPS, go = _data()
     topbar(f"{subject} → {module} → {iq} — Dotpoints", back_to=back_to)
     st.caption("Click Toggle to include/exclude dotpoints.")
@@ -136,4 +134,4 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
                              key=f"{key_prefix}_dp_toggle_{i}", use_container_width=True):
                     if selected: st.session_state["sel_dotpoints"].discard(item)
                     else:        st.session_state["sel_dotpoints"].add(item)
-                    st.rerun()
+                    safe_rerun()
