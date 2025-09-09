@@ -1,53 +1,33 @@
 {
   "Biology": {
-    "Module 5: Heredity": {
-      "IQ 5.1: Meiosis & Variation": [
-        "Outline the stages of meiosis and their role in genetic variation",
-        "Explain independent assortment and crossing over",
-        "Predict outcomes of nondisjunction events"
+    "Module 6: Genetic Change": {
+      "IQ1: Mutations": [
+        "Describe point vs frameshift mutations",
+        "Explain mutagens and mutation rates",
+        "Assess impacts on protein structure"
       ],
-      "IQ 5.2: Inheritance Patterns": [
-        "Apply Mendelian ratios to monohybrid and dihybrid crosses",
-        "Analyse codominance and incomplete dominance",
-        "Interpret pedigrees to infer inheritance patterns"
+      "IQ2: Biotechnology": [
+        "Outline PCR steps and applications",
+        "Summarise CRISPR-Cas9 mechanism",
+        "Discuss ethics of gene editing"
       ]
     },
-    "Module 6: Genetic Change": {
-      "IQ 6.1: Mutations": [
-        "Describe point mutations and their effects on polypeptides",
-        "Explain chromosomal mutations and consequences",
-        "Evaluate mutagens and DNA repair mechanisms"
-      ],
-      "IQ 6.2: Biotechnology": [
-        "Explain PCR, gel electrophoresis, and DNA sequencing",
-        "Assess applications and ethics of gene technologies",
-        "Describe CRISPR-Cas9 mechanism and limitations"
+    "Module 7: Infectious Disease": {
+      "IQ1: Pathogens": [
+        "Classify pathogens and transmission modes",
+        "Explain innate vs adaptive immunity"
       ]
     }
   },
   "Chemistry": {
-    "Module 5: Equilibrium and Acid Reactions": {
-      "IQ 5.1: Chemical Equilibrium": [
-        "Define dynamic equilibrium and equilibrium constant K",
-        "Predict Le Châtelier responses to disturbances",
-        "Relate reaction quotient Q to direction of shift"
+    "Module 5: Equilibrium": {
+      "IQ1: Le Chatelier": [
+        "Predict shifts for concentration, pressure, temperature",
+        "Relate Kc to reaction quotient Q"
       ],
-      "IQ 5.2: Acids and Bases": [
-        "Use Bronsted-Lowry theory to identify acid-base pairs",
-        "Calculate pH from strong acid/base concentration",
-        "Compare weak vs strong acids using Ka"
-      ]
-    },
-    "Module 6: Acid/Base and Quantitative Analysis": {
-      "IQ 6.1: Buffers": [
-        "Explain buffer action with Henderson-Hasselbalch equation",
-        "Design buffer solutions for a target pH",
-        "Predict buffer capacity changes upon dilution or addition"
-      ],
-      "IQ 6.2: Titrations": [
-        "Perform titration calculations for monoprotic acids",
-        "Interpret titration curves and equivalence points",
-        "Select suitable indicators for different titrations"
+      "IQ2: Calculations": [
+        "Calculate Kc and interpret magnitude",
+        "Solve ICE tables for equilibria"
       ]
     }
   }
