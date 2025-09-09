@@ -178,100 +178,110 @@ def subject_cards(subjects: List[str], key_prefix: str, back_to: Optional[str]):
     else:
         st.title("Choose Subject")
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+
     cols = st.columns(2)
     for i, s in enumerate(subjects):
         with cols[i % 2]:
             selected = is_subject_selected(s)
-            css = "card selected" if selected else "card"
-            st.markdown(f'<div class="{css}">', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-title">{s}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-sub">{len(MODS.get(s, []))} modules</div>', unsafe_allow_html=True)
-            a, b = st.columns([3,2])
-            with a:
-                if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
-                    st.session_state["focus_subject"] = s
-                    if key_prefix == "cram": go("cram_modules")
-                    else:                    go("srs_modules")
-            with b:
-                if st.button(("Unselect" if selected else "Select"),
-                             key=f"{key_prefix}_sel_{i}", use_container_width=True):
-                    add_all_modules(s, on=not selected)
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            box = st.container(border=True)
+            with box:
+                # Selected indicator
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"### {s}")
+                st.caption(f"{len(MODS.get(s, []))} modules")
+                a, b = st.columns([3,2])
+                with a:
+                    if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
+                        st.session_state["focus_subject"] = s
+                        if key_prefix == "cram": go("cram_modules")
+                        else:                    go("srs_modules")
+                with b:
+                    if st.button(("Unselect" if selected else "Select"),
+                                 key=f"{key_prefix}_sel_{i}", use_container_width=True):
+                        add_all_modules(s, on=not selected)
+                        st.rerun()
 
 def module_cards(subject: str, key_prefix: str, back_to: str):
     topbar(f"{subject} — Modules", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+
     modules = MODS.get(subject, [])
     cols = st.columns(2)
     for i, m in enumerate(modules):
         with cols[i % 2]:
             selected = is_module_selected(subject, m)
-            css = "card selected" if selected else "card"
-            st.markdown(f'<div class="{css}">', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-title">{m}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-sub">{len(IQS.get((subject, m), []))} inquiry questions</div>', unsafe_allow_html=True)
-            a, b = st.columns([3,2])
-            with a:
-                if st.button("Open", key=f"{key_prefix}_mod_open_{i}", use_container_width=True):
-                    st.session_state["focus_module"] = (subject, m)
-                    if key_prefix == "cram": go("cram_iqs")
-                    else:                    go("srs_iqs")
-            with b:
-                if st.button(("Unselect" if selected else "Select"),
-                             key=f"{key_prefix}_mod_sel_{i}", use_container_width=True):
-                    add_all_iqs(subject, m, on=not selected)
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"### {m}")
+                st.caption(f"{len(IQS.get((subject, m), []))} inquiry questions")
+                a, b = st.columns([3,2])
+                with a:
+                    if st.button("Open", key=f"{key_prefix}_mod_open_{i}", use_container_width=True):
+                        st.session_state["focus_module"] = (subject, m)
+                        if key_prefix == "cram": go("cram_iqs")
+                        else:                    go("srs_iqs")
+                with b:
+                    if st.button(("Unselect" if selected else "Select"),
+                                 key=f"{key_prefix}_mod_sel_{i}", use_container_width=True):
+                        add_all_iqs(subject, m, on=not selected)
+                        st.rerun()
 
 def iq_cards(subject: str, module: str, key_prefix: str, back_to: str):
     topbar(f"{subject} → {module} — IQs", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+
     iqs = IQS.get((subject, module), [])
     cols = st.columns(2)
     for i, iq in enumerate(iqs):
         with cols[i % 2]:
             selected = is_iq_selected(subject, module, iq)
-            css = "card selected" if selected else "card"
-            st.markdown(f'<div class="{css}">', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-title">{iq}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-sub">{len(DPS.get((subject, module, iq), []))} dotpoints</div>', unsafe_allow_html=True)
-            a, b = st.columns([3,2])
-            with a:
-                if st.button("Open", key=f"{key_prefix}_iq_open_{i}", use_container_width=True):
-                    st.session_state["focus_iq"] = (subject, module, iq)
-                    if key_prefix == "cram": go("cram_dotpoints")
-                    else:                    go("srs_dotpoints")
-            with b:
-                if st.button(("Unselect" if selected else "Select"),
-                             key=f"{key_prefix}_iq_sel_{i}", use_container_width=True):
-                    add_all_dps(subject, module, iq, on=not selected)
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"### {iq}")
+                st.caption(f"{len(DPS.get((subject, module, iq), []))} dotpoints")
+                a, b = st.columns([3,2])
+                with a:
+                    if st.button("Open", key=f"{key_prefix}_iq_open_{i}", use_container_width=True):
+                        st.session_state["focus_iq"] = (subject, module, iq)
+                        if key_prefix == "cram": go("cram_dotpoints")
+                        else:                    go("srs_dotpoints")
+                with b:
+                    if st.button(("Unselect" if selected else "Select"),
+                                 key=f"{key_prefix}_iq_sel_{i}", use_container_width=True):
+                        add_all_dps(subject, module, iq, on=not selected)
+                        st.rerun()
 
 def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to: str):
     topbar(f"{subject} → {module} → {iq} — Dotpoints", back_to=back_to)
     st.caption("Click Toggle to include/exclude dotpoints.")
+
     dps = DPS.get((subject, module, iq), [])
     colA, colB = st.columns(2)
     for i, dp in enumerate(dps):
         selected = (subject, module, iq, dp) in st.session_state["sel_dotpoints"]
         with (colA if i % 2 == 0 else colB):
-            css = "card selected" if selected else "card"
-            st.markdown(f'<div class="{css}">', unsafe_allow_html=True)
-            st.markdown(f'<div class="card-title">{dp}</div>', unsafe_allow_html=True)
-            if st.button("Toggle", key=f"{key_prefix}_dp_toggle_{i}", use_container_width=True):
-                item = (subject, module, iq, dp)
-                if selected: st.session_state["sel_dotpoints"].discard(item)
-                else:        st.session_state["sel_dotpoints"].add(item)
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#16a34a;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"**{dp}**")
+                if st.button(("Unselect" if selected else "Select / Toggle"),
+                             key=f"{key_prefix}_dp_toggle_{i}", use_container_width=True):
+                    item = (subject, module, iq, dp)
+                    if selected: st.session_state["sel_dotpoints"].discard(item)
+                    else:        st.session_state["sel_dotpoints"].add(item)
+                    st.rerun()
 
     mid = st.columns([1,1,1])[1]
     with mid:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
             go("cram_review" if key_prefix == "cram" else "srs_review")
-
+          
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
     # Boxed, inner-scrolling list (no parent wrappers!)
