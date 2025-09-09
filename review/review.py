@@ -1,8 +1,7 @@
 import uuid
 import streamlit as st
 from typing import List, Set
-
-from common.ui import topbar
+from common.ui import topbar, go, safe_rerun
 
 def review_box(route_key: str, title: str, rows: List[tuple],
                back_to: str, after_submit_route: str):
@@ -54,11 +53,11 @@ def review_box(route_key: str, title: str, rows: List[tuple],
         with left:
             if st.button("Keep", key=f"{KP}_keep_{idx}"):
                 removed.discard(k)
-                st.rerun()
+                safe_rerun()
         with right:
             if st.button("Remove", key=f"{KP}_remove_{idx}"):
                 removed.add(k)
-                st.rerun()
+                safe_rerun()
 
     kept_count = len(rows) - len(removed)
     st.info(f"Kept: {kept_count}   |   Removed: {len(removed)}")
@@ -66,7 +65,7 @@ def review_box(route_key: str, title: str, rows: List[tuple],
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("← Back", key=f"{KP}_back"):
-            st.session_state["_go"](back_to)
+            go(back_to)
 
     def write_selection_and_maybe_go(go_next: bool):
         kept_items = {item for item in rows if item_key(item) not in removed}
@@ -74,7 +73,7 @@ def review_box(route_key: str, title: str, rows: List[tuple],
         st.success("Selection updated.")
         if go_next:
             st.session_state.pop(removed_key, None)
-            st.session_state["_go"](after_submit_route)
+            go(after_submit_route)
 
     with c2:
         if st.button("Apply changes", key=f"{KP}_apply", type="primary"):
