@@ -21,16 +21,22 @@ from review.review import page_srs_review, page_cram_review
 st.set_page_config(page_title="Syllabuddy", layout="wide")
 inject_css()
 
-# ---------- rerun + router ----------
-def _mk_rerun():
-    return getattr(st, "rerun", st.experimental_rerun)
-RERUN = _mk_rerun()
+# ---------- version-safe rerun + router ----------
+def safe_rerun():
+    # Streamlit >= 1.30
+    if hasattr(st, "rerun"):
+        st.rerun()
+        return
+    # Older Streamlit
+    if hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()  # type: ignore[attr-defined]
+        return
+    # Last-resort: flip a dummy state key to trigger a rerun
+    st.session_state["_force_rerun_tick"] = st.session_state.get("_force_rerun_tick", 0) + 1
 
 def go(route: str):
     st.session_state["route"] = route
-    RERUN()
-
-set_go(go)
+    safe_rerun()
 
 # ---------- data & shared state ----------
 SYL = load_syllabus()
