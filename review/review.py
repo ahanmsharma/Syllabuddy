@@ -1,177 +1,119 @@
 import uuid
-from typing import List, Set, Tuple
 import streamlit as st
-from common.ui import topbar, go
+from common.ui import topbar, go, safe_rerun
 
-# ---------- Local CSS just for review pages ----------
-REVIEW_CSS = """
-<style>
-/* Card */
-.dp-card {
-  border: 2px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  background: #ffffff;
-}
-.dp-card.green {
-  border-color: #16a34a; /* green-600 */
-  box-shadow: inset 0 0 0 2px rgba(22,163,74,.18);
-}
-.dp-card.red {
-  border-color: #b91c1c; /* red-700 */
-  box-shadow: inset 0 0 0 2px rgba(185,28,28,.15);
-}
-
-/* Top row: subject/module/iq + status pill */
-.row-top {
-  display:flex; align-items:center; justify-content:space-between;
-  gap:10px; margin-bottom:8px;
-}
-.title {
-  font-weight: 800; color: #111827;
-}
-.dp-text { color:#111827; }
-
-/* Status pill */
-.pill {
-  display:inline-block; font-weight:700; font-size:.85rem;
-  padding:2px 10px; border-radius:9999px; border:1px solid transparent;
-}
-.pill.keep   { color:#065f46; background:#d1fae5; border-color:#6ee7b7; }   /* green */
-.pill.remove { color:#7f1d1d; background:#fee2e2; border-color:#fecaca; }   /* red */
-
-/* Footer */
-.review-footer {
-  position: relative;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
-}
-</style>
-"""
-
-def _stable_key(item: Tuple[str, str, str, str]) -> str:
+def _key_for(item) -> str:
     s, m, iq, dp = item
     return f"{s}||{m}||{iq}||{dp}"
 
-def _class_and_pill(is_removed: bool) -> Tuple[str, str]:
-    """Return (card_class, pill_html)."""
-    if is_removed:
-        return ("dp-card red", '<span class="pill remove">Removed</span>')
-    return ("dp-card green", '<span class="pill keep">Kept</span>')
+def page_ai_select():
+    SUBJECTS = st.session_state["_SUBJECTS"]
+    MODS     = st.session_state["_MODS"]
+    IQS      = st.session_state["_IQS"]
+    DPS      = st.session_state["_DPS"]
 
-def review_box(
-    route_key: str,
-    title: str,
-    rows: List[Tuple[str, str, str, str]],
-    back_to: str,
-    after_submit_route: str,
-):
-    """
-    Clean, stable review UI shared by SR and Cram:
-      • Kept (green) by default; clicking Remove toggles to red.
-      • Status pill and card border color update immediately.
-      • Single footer: Back / Apply changes / Submit & Continue.
-      • Unique keys per render to avoid duplicate-key issues.
-      • No custom scroll wrappers.
-    """
-    topbar(title, back_to=back_to)
-    st.markdown(REVIEW_CSS, unsafe_allow_html=True)
+    topbar("AI selection — enter weaknesses", back_to="select_subject_main")
+    st.write("Type what you struggle with; we’ll propose dotpoints that match (placeholder suggestions for now).")
+    st.session_state["ai_weakness_text"] = st.text_area(
+        "Weaknesses", key="ai_wk2", height=150,
+        placeholder="e.g., equilibrium constants; vectors; cell transport"
+    )
+    if st.button("Get suggestions", type="primary"):
+        suggestions = []
+        for s in SUBJECTS:
+            for m in MODS.get(s, []):
+                for iq in IQS.get((s, m), []):
+                    for dp in DPS.get((s, m, iq), []):
+                        suggestions.append((s, m, iq, dp))
+        st.session_state["ai_suggested"] = suggestions[:40]
 
-    # Per-render instance key to avoid duplicate widget keys even on rapid reruns
-    instance = uuid.uuid4().hex[:6]
-    KP = f"{route_key}_rb_{instance}"
+        # Track per-item status: "keep" | "remove"
+        st.session_state["ai_status"] = {}  # key -> "keep"/"remove"
+        go("ai_review")
 
-    # Route-scoped "removed" set
-    removed_key = f"__rb_removed__::{route_key}"
-    if removed_key not in st.session_state:
-        st.session_state[removed_key] = set()
-    removed: Set[str] = st.session_state[removed_key]
+def page_ai_review():
+    topbar("Review suggested dotpoints", back_to="ai_select")
+    st.write("Click ✅ Keep (green) or ❌ Remove (red). Tally updates live. Use 'Apply selection' to add kept items.")
 
-    st.caption(f"Total selected dotpoints: **{len(rows)}**")
+    # Ensure required state
+    suggested = st.session_state.get("ai_suggested", [])
+    status = st.session_state.get("ai_status", {})
+    if status is None:
+        status = {}
+        st.session_state["ai_status"] = status
 
-    # Render each row as a consistent card
-    for idx, item in enumerate(rows):
+    # Unique prefix for this render (avoid duplicate keys)
+    inst = uuid.uuid4().hex[:6]
+    KP = f"ai_rev_{inst}"
+
+    kept_count = 0
+    removed_count = 0
+
+    for idx, item in enumerate(suggested):
+        k = _key_for(item)
+        tag = status.get(k)  # None | "keep" | "remove"
+        is_removed = (tag == "remove")
+        is_kept    = (tag == "keep")
+
+        # classes & pill
+        card_class = "dp-card green" if is_kept else ("dp-card red" if is_removed else "dp-card")
+        pill_html  = (
+            '<span class="pill keep">Kept</span>' if is_kept
+            else ('<span class="pill remove">Removed</span>' if is_removed
+                  else '<span class="pill">Unreviewed</span>')
+        )
+
+        if is_kept: kept_count += 1
+        if is_removed: removed_count += 1
+
         s, m, iq, dp = item
-        k = _stable_key(item)
-        is_removed = (k in removed)
-
-        card_class, pill_html = _class_and_pill(is_removed)
-
         with st.container(border=False):
             st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
-
-            # Title + pill on top
             st.markdown('<div class="row-top">', unsafe_allow_html=True)
             st.markdown(f'<div class="title">{s} → {m} → {iq}</div>', unsafe_allow_html=True)
             st.markdown(pill_html, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Dotpoint text
             st.markdown(f'<div class="dp-text">{dp}</div>', unsafe_allow_html=True)
 
-            # Actions
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("Keep", key=f"{KP}_keep_{idx}", use_container_width=True):
-                    # kept by default; ensure it's not in removed
-                    if k in removed:
-                        removed.remove(k)
-                    # no explicit rerun needed; button click already reruns the script
+                if st.button("✅ Keep", key=f"{KP}_keep_{idx}", use_container_width=True):
+                    status[k] = "keep"
+                    safe_rerun()
             with c2:
-                if st.button("Remove", key=f"{KP}_remove_{idx}", use_container_width=True):
-                    removed.add(k)
+                if st.button("❌ Remove", key=f"{KP}_remove_{idx}", use_container_width=True):
+                    status[k] = "remove"
+                    safe_rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)  # end card
 
-    kept_count = len(rows) - len(removed)
-    st.info(f"Kept: {kept_count}   |   Removed: {len(removed)}")
+    st.info(f"Kept: {kept_count}   |   Removed: {removed_count}   |   Unreviewed: {len(suggested) - kept_count - removed_count}")
 
-    # Footer (single set of buttons)
+    # Footer
     st.markdown('<div class="review-footer">', unsafe_allow_html=True)
-    f1, f2, f3 = st.columns(3)
+    left, mid, right = st.columns(3)
+    with left:
+        if st.button("← Back to Choose Subject", key=f"{KP}_back"):
+            go("cram_subjects")
 
-    with f1:
-        if st.button("← Back", key=f"{KP}_back"):
-            go(back_to)
+    def _apply_selection(go_home: bool):
+        # Add kept items to global selection
+        sel = st.session_state.get("sel_dotpoints", set())
+        for item in suggested:
+            if st.session_state["ai_status"].get(_key_for(item)) == "keep":
+                sel.add(item)
+        st.session_state["sel_dotpoints"] = sel
+        st.success("Added kept dotpoints to your selection.")
+        if go_home:
+            go("home")
 
-    def _apply(go_next: bool):
-        # Compute final kept items
-        kept_items = {itm for itm in rows if _stable_key(itm) not in removed}
-        st.session_state["sel_dotpoints"] = kept_items
-        st.success("Selection updated.")
-        if go_next:
-            # clear the removed cache so a fresh visit starts clean
-            st.session_state.pop(removed_key, None)
-            go(after_submit_route)
+    with mid:
+        if st.button("Apply selection", key=f"{KP}_apply", type="primary"):
+            _apply_selection(go_home=False)
 
-    with f2:
-        if st.button("Apply changes", key=f"{KP}_apply", type="primary"):
-            _apply(go_next=False)
-
-    with f3:
-        if st.button("Submit & Continue", key=f"{KP}_submit", type="primary"):
-            _apply(go_next=True)
+    with right:
+        if st.button("Done", key=f"{KP}_done", type="primary"):
+            _apply_selection(go_home=True)
 
     st.markdown("</div>", unsafe_allow_html=True)  # end footer
-
-def page_cram_review():
-    rows = sorted(list(st.session_state["sel_dotpoints"]))
-    review_box(
-        route_key="cram",
-        title="Review Selection (Cram)",
-        rows=rows,
-        back_to="cram_subjects",
-        after_submit_route="cram_how",
-    )
-
-def page_srs_review():
-    rows = sorted(list(st.session_state["sel_dotpoints"]))
-    review_box(
-        route_key="srs",
-        title="Review Selection (SR)",
-        rows=rows,
-        back_to="srs_subjects",
-        after_submit_route="srs_menu",
-    )
