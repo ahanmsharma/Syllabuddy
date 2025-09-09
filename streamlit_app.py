@@ -66,34 +66,27 @@ GESTURES_OK = GESTURE_DIR.exists() and (GESTURE_DIR / "index.html").exists()
 if GESTURES_OK:
     gesture_grid = components.declare_component("gesture_grid", path=str(GESTURE_DIR))
 
-def render_gesture_grid(items: List[dict], long_press_ms: int = 450, key: str = "grid"):
+def render_gesture_grid(items: List[dict], key: str = "grid"):
     """
-    items: [{id, title, subtitle, selected}]
-    Returns {"type":"select"|"open","id": "..."} or None.
-    - When gestures component exists → use it (click=open, long-press=select).
-    - Else → fallback with buttons (single-click Open + Select).
+    Simple fallback: 
+    - Single click = open 
+    - Checkbox = select/unselect
     """
-    if GESTURES_OK:
-        return gesture_grid(items=items, longPressMs=long_press_ms, key=key, default=None)
-
-    # Fallback UI (clear, never grey)
-    evt = None
-    st.info("Gestures not found; using simple buttons.")
+    event = None
+    cols = st.columns(2)
     for i, it in enumerate(items):
-        st.markdown(f'<div class="card{" selected" if it.get("selected") else ""}">', unsafe_allow_html=True)
-        st.markdown(f'<div class="card-title">{it["title"]}</div>', unsafe_allow_html=True)
-        if it.get("subtitle"):
-            st.markdown(f'<div class="card-sub">{it["subtitle"]}</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns([1,1])
-        with c1:
+        col = cols[i % 2]
+        with col:
+            sel = st.checkbox(
+                it["title"], 
+                value=it.get("selected", False), 
+                key=f"{key}_chk_{i}"
+            )
+            if sel != it.get("selected", False):
+                event = {"type": "select", "id": it["id"]}
             if st.button("Open", key=f"{key}_open_{i}", use_container_width=True):
-                evt = {"type": "open", "id": it["id"]}
-        with c2:
-            label = "Unselect" if it.get("selected") else "Select"
-            if st.button(label, key=f"{key}_sel_{i}", use_container_width=True):
-                evt = {"type": "select", "id": it["id"]}
-        st.markdown('</div>', unsafe_allow_html=True)
-    return evt
+                event = {"type": "open", "id": it["id"]}
+    return event
 
 # ---------- Section 1: Data Loaders ----------
 @st.cache_data(show_spinner=False)
