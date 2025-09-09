@@ -284,29 +284,88 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
           
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
-    # Boxed, inner-scrolling list (no parent wrappers!)
+    """
+    A clean review list:
+      - Each item in a bordered box with a green (kept) or red (removed) top strip.
+      - One checkbox to toggle "Keep this".
+      - Sticky header & sticky footer so only the middle scrolls.
+    """
     topbar(title, back_to=back_to)
+
+    # Start with the current selection as "kept"
+    temp = set(rows)
+
+    # --- Sticky header with counters ---
+    kept_count = len(temp)
+    total_count = len(rows)
+    removed_count = total_count - kept_count
+
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
-    st.markdown(f'<div class="scroll-head">{title}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'''
+        <div class="scroll-head">
+          {title}
+          <div style="float:right; font-weight:600;">
+            <span style="color:#16a34a;">Kept: {kept_count}</span> &nbsp;|&nbsp;
+            <span style="color:#b91c1c;">Removed: {removed_count}</span>
+          </div>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+
+    # --- Scroll body: boxes with colored strip + checkbox toggle ---
     st.markdown('<div class="scroll-body">', unsafe_allow_html=True)
 
-    temp = set(rows)
-    for idx, (s, m, iq, dp) in enumerate(rows):
-        sel = (s, m, iq, dp) in temp
-        klass = "dp-item selected" if sel else "dp-item"
-        st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
-        st.write(f"**{s} → {m} → {iq}** — {dp}")
-        c1, c2 = st.columns([1,1])
-        with c1:
-            if st.button("✅ Keep", key=f"keep_{idx}", use_container_width=True):
-                temp.add((s, m, iq, dp))
-        with c2:
-            if st.button("❌ Remove", key=f"drop_{idx}", use_container_width=True):
-                temp.discard((s, m, iq, dp))
-        st.markdown('</div>', unsafe_allow_html=True)
+    for idx, item in enumerate(rows):
+        s, m, iq, dp = item
+        kept = item in temp
 
-    st.markdown('</div>', unsafe_allow_html=True)  # body
+        # Box with border=True so widgets render correctly inside
+        box = st.container(border=True)
+        with box:
+            # colored strip
+            strip_color = "#16a34a" if kept else "#b91c1c"
+            strip_label = "Kept" if kept else "Removed"
+            st.markdown(
+                f"<div style='height:6px;background:{strip_color};border-radius:6px;"
+                f"margin:-8px -8px 8px -8px;'></div>",
+                unsafe_allow_html=True
+            )
 
+            # title line
+            st.markdown(f"**{s} → {m} → {iq}** — {dp}")
+
+            # toggle row
+            c1, c2, c3 = st.columns([2,2,3])
+            with c1:
+                new_keep = st.checkbox("Keep this", value=kept, key=f"rev_keep_{idx}")
+            with c2:
+                st.markdown(
+                    f"<span style='font-weight:700;color:{strip_color};'>{strip_label}</span>",
+                    unsafe_allow_html=True
+                )
+            with c3:
+                # Optional quick actions
+                colA, colB = st.columns(2)
+                with colA:
+                    if st.button("Keep", key=f"rev_btn_keep_{idx}", use_container_width=True):
+                        new_keep = True
+                        st.session_state[f"rev_keep_{idx}"] = True
+                with colB:
+                    if st.button("Remove", key=f"rev_btn_drop_{idx}", use_container_width=True):
+                        new_keep = False
+                        st.session_state[f"rev_keep_{idx}"] = False
+
+            # apply change to temp set
+            if new_keep and item not in temp:
+                temp.add(item)
+            elif (not new_keep) and item in temp:
+                temp.discard(item)
+
+    st.markdown('</div>', unsafe_allow_html=True)  # end scroll-body
+
+    # --- Sticky footer ---
     st.markdown('<div class="scroll-foot">', unsafe_allow_html=True)
     left, mid, right = st.columns([1,1,1])
     with left:
@@ -316,12 +375,14 @@ def review_box(title: str, rows: List[tuple], apply_label: str,
         if st.button(apply_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
             st.success("Selection updated.")
+            # refresh counters in header
+            st.rerun()
     with right:
         if st.button(submit_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
             go(after_submit_route)
-    st.markdown('</div>', unsafe_allow_html=True)  # foot
-    st.markdown('</div>', unsafe_allow_html=True)  # wrap
+    st.markdown('</div>', unsafe_allow_html=True)  # end scroll-foot
+    st.markdown('</div>', unsafe_allow_html=True)  # end scroll-wrap
 
 # ---------- Pages ----------
 def page_home():
