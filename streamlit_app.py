@@ -380,28 +380,28 @@ elif st.session_state.stage == "post_cloze":
         more_w = st.text_input("Add weaknesses (semicolon-separated)", key="more_wk", placeholder="e.g., boundary conditions; term definitions")
 
     go = st.columns(3)[1].button("Continue", use_container_width=True)
-if go:
-    # Merge new weaknesses
-    add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
-    merged = st.session_state.weak_list[:]
-    for w in add_list:
-        if w not in merged:
-            merged.append(w)
-    st.session_state.weak_list = merged[:5]
+    if go:
+        # Merge new weaknesses
+        add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
+        merged = st.session_state.weak_list[:]
+        for w in add_list:
+            if w not in merged:
+                merged.append(w)
+        st.session_state.weak_list = merged[:5]
 
-    if rating <= 6 and st.session_state.cloze_specificity == 0:
-        # allow one more specific cloze only
-        st.session_state.cloze_specificity = 1
-        st.session_state.current_cloze = None
-        st.session_state.correct_flags = None
-        st.session_state.stage = "cloze"
-    else:
-        # after either the second cloze OR high rating, move to FP follow-ups
-        st.session_state.cloze_specificity = 0
-        st.session_state.current_cloze = None
-        st.session_state.correct_flags = None
-        st.session_state.stage = "fp_followups"
-    st.rerun()
+        if rating <= 6 and st.session_state.cloze_specificity == 0:
+            # allow one more specific cloze only
+            st.session_state.cloze_specificity = 1
+            st.session_state.current_cloze = None
+            st.session_state.correct_flags = None
+            st.session_state.stage = "cloze"
+        else:
+            # after either the second cloze OR high rating, move to FP follow-ups
+            st.session_state.cloze_specificity = 0
+            st.session_state.current_cloze = None
+            st.session_state.correct_flags = None
+            st.session_state.stage = "fp_followups"
+        st.rerun()
 
 
 # ----- FP FOLLOW-UPS (tailored to current weakness) -----
