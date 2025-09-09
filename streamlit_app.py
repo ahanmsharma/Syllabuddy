@@ -1,28 +1,18 @@
 # ===============================
-# S Y L L A B U D D Y   (sections)
-# - Section 0: Imports, Config, Styles
-# - Section 1: Data Loaders
-# - Section 2: Global State / Helpers
-# - Section 3: Reusable UI (Topbar, Gestures, Review Box)
-# - Section 4: Selection Engine (Subjects → Modules → IQs → Dotpoints)
-# - Section 5: Home & Menus (Home, SRS menu, Select Subject)
-# - Section 6: Cram Mode + Prioritization Review
-# - Section 7: AI Suggestions (weakness-based) + Review
-# - Section 8: Router
-# - Section 9: PLACEHOLDERS for SRS/Exam/Tutor
+# S Y L L A B U D D Y   (clean routes + fixed scroll + robust gestures)
 # ===============================
 
 # ---------- Section 0: Imports, Config, Styles ----------
 import json
 import pathlib
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Syllabuddy", layout="wide")
 
-# Tighter top padding; global UI polish
+# Global CSS (title high, sticky review box, crisp cards)
 st.markdown("""
 <style>
   .block-container { max-width: 1280px; padding-top: 6px; margin: auto; }
@@ -69,37 +59,40 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- gestures component (zero-build) ----------
-GESTURE_BUILD_DIR = pathlib.Path(__file__).parent / "frontend_gestures" / "build"
-GESTURES_OK = GESTURE_BUILD_DIR.exists()
+# ---------- gestures component (zero-build; require index.html) ----------
+GESTURE_DIR = pathlib.Path(__file__).parent / "frontend_gestures" / "build"
+GESTURES_OK = GESTURE_DIR.exists() and (GESTURE_DIR / "index.html").exists()
 
 if GESTURES_OK:
-    gesture_grid = components.declare_component("gesture_grid", path=str(GESTURE_BUILD_DIR))
+    gesture_grid = components.declare_component("gesture_grid", path=str(GESTURE_DIR))
 
 def render_gesture_grid(items: List[dict], long_press_ms: int = 450, key: str = "grid"):
     """
     items: [{id, title, subtitle, selected}]
     Returns {"type":"select"|"open","id": "..."} or None.
     - When gestures component exists → use it (click=open, long-press=select).
-    - Else → fallback with buttons (still single-click Open).
+    - Else → fallback with buttons (single-click Open + Select).
     """
     if GESTURES_OK:
         return gesture_grid(items=items, longPressMs=long_press_ms, key=key, default=None)
 
-    # Fallback UI: simple cards with Open/Select buttons (so no page looks blank)
-    st.info("Gestures not available — using fallback buttons here.")
+    # Fallback UI (clear, never grey)
     evt = None
+    st.info("Gestures not found; using simple buttons.")
     for i, it in enumerate(items):
-        c1, c2 = st.columns([5,2])
+        st.markdown(f'<div class="card{" selected" if it.get("selected") else ""}">', unsafe_allow_html=True)
+        st.markdown(f'<div class="card-title">{it["title"]}</div>', unsafe_allow_html=True)
+        if it.get("subtitle"):
+            st.markdown(f'<div class="card-sub">{it["subtitle"]}</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns([1,1])
         with c1:
-            st.markdown(f"**{it['title']}**  \n{it.get('subtitle','')}")
-        with c2:
             if st.button("Open", key=f"{key}_open_{i}", use_container_width=True):
                 evt = {"type": "open", "id": it["id"]}
+        with c2:
             label = "Unselect" if it.get("selected") else "Select"
             if st.button(label, key=f"{key}_sel_{i}", use_container_width=True):
                 evt = {"type": "select", "id": it["id"]}
-        st.divider()
+        st.markdown('</div>', unsafe_allow_html=True)
     return evt
 
 # ---------- Section 1: Data Loaders ----------
@@ -140,39 +133,27 @@ def ensure_state():
     st.session_state.setdefault("ai_chosen", set())
 
 ensure_state()
-
-def go(route: str):
-    st.session_state["route"] = route
+def go(route: str): st.session_state["route"] = route
 
 # selection helpers
 def add_all_modules(subject: str, on: bool):
-    for m in MODS.get(subject, []):
-        add_all_iqs(subject, m, on)
-
+    for m in MODS.get(subject, []): add_all_iqs(subject, m, on)
 def add_all_iqs(subject: str, module: str, on: bool):
-    for iq in IQS.get((subject, module), []):
-        add_all_dps(subject, module, iq, on)
-
+    for iq in IQS.get((subject, module), []): add_all_dps(subject, module, iq, on)
 def add_all_dps(subject: str, module: str, iq: str, on: bool):
     for dp in DPS.get((subject, module, iq), []):
         item = (subject, module, iq, dp)
-        if on:
-            st.session_state["sel_dotpoints"].add(item)
-        else:
-            st.session_state["sel_dotpoints"].discard(item)
-
+        (st.session_state["sel_dotpoints"].add(item) if on
+         else st.session_state["sel_dotpoints"].discard(item))
 def is_subject_selected(subject: str) -> bool:
     return any(s == subject for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
-
 def is_module_selected(subject: str, module: str) -> bool:
     return any((s == subject and m == module) for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
-
 def is_iq_selected(subject: str, module: str, iq: str) -> bool:
     return any((s == subject and m == module and i == iq) for (s, m, i, dp) in st.session_state["sel_dotpoints"])
 
 # ---------- Section 3: Reusable UI ----------
-def topbar(title: str, back_to: str | None = None):
-    # Inline arrow and Back button, title right at top
+def topbar(title: str, back_to: Optional[str] = None):
     c1, c2 = st.columns([1,6], vertical_alignment="center")
     with c1:
         if back_to:
@@ -188,7 +169,7 @@ def topbar(title: str, back_to: str | None = None):
 
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
-    # Only inner list scrolls; header & footer stick
+    # Important: No extra Streamlit containers around this block → only inner list scrolls
     topbar(title, back_to=back_to)
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
     st.markdown(f'<div class="scroll-head">{title}</div>', unsafe_allow_html=True)
@@ -228,16 +209,15 @@ def review_box(title: str, rows: List[tuple], apply_label: str,
     st.markdown('</div>', unsafe_allow_html=True)  # wrap
 
 # ---------- Section 4: Selection Engine ----------
-def page_subjects(subject_next_route: str, review_route: str, back_to: str | None):
+def page_subjects(subject_next_route: str, review_route: str, back_to: Optional[str]):
     topbar("Choose Subject", back_to=back_to)
     st.caption("Click = **Open** · Long-press = **Select/Unselect** (blue border).")
 
-    # clear focus each time we enter subjects
+    # Reset focus on entering subjects
     st.session_state["focus_subject"] = None
     st.session_state["focus_module"] = None
     st.session_state["focus_iq"] = None
 
-    # subjects grid
     if not SUBJECTS:
         st.warning("No subjects found in syllabus.json.")
         return
@@ -270,14 +250,13 @@ def page_subject_drill(subject: str, next_route: str, back_to: str):
     topbar(f"{subject} — Modules", back_to=back_to)
     st.caption("Click = **Open** · Long-press = **Select/Unselect**. Dotpoints toggle on click.")
 
-    # modules grid
-    modules = MODS.get(subject, [])
+    # Modules grid
     items = [{
         "id": f"mod::{subject}::{m}",
         "title": m,
         "subtitle": f"{len(IQS.get((subject, m), []))} inquiry questions",
         "selected": is_module_selected(subject, m),
-    } for m in modules]
+    } for m in MODS.get(subject, [])]
 
     evt = render_gesture_grid(items, key=f"grid_modules_{subject}")
     if evt:
@@ -293,13 +272,12 @@ def page_subject_drill(subject: str, next_route: str, back_to: str):
     if sm and sm[0] == subject:
         s, m = sm
         st.subheader(f"IQs in {m}")
-        iq_list = IQS.get((s, m), [])
         items2 = [{
             "id": f"iq::{s}::{m}::{iq}",
             "title": iq,
             "subtitle": f"{len(DPS.get((s, m, iq), []))} dotpoints",
             "selected": is_iq_selected(s, m, iq),
-        } for iq in iq_list]
+        } for iq in IQS.get((s, m), [])]
 
         evt2 = render_gesture_grid(items2, key=f"grid_iqs_{s}_{m}")
         if evt2:
@@ -310,7 +288,7 @@ def page_subject_drill(subject: str, next_route: str, back_to: str):
             elif et == "open":
                 st.session_state["focus_iq"] = (ss, mm, ii); st.rerun()
 
-    # Dotpoints - single click toggle
+    # Dotpoints — single-click toggle
     smi = st.session_state.get("focus_iq")
     if smi and smi[0] == subject:
         s, m, iq = smi
@@ -397,7 +375,7 @@ def page_cram_subjects():
 def page_cram_subject_drill():
     s = st.session_state.get("focus_subject")
     if not s:
-        go("cram_subjects"); return
+        go("cram_subjects"); st.stop()
     page_subject_drill(s, "cram_review", "cram_subjects")
 
 def page_cram_review():
@@ -418,8 +396,7 @@ def page_cram_how():
     with mid:
         if st.button("Proceed", type="primary", use_container_width=True):
             st.session_state["prioritization_mode"] = mode.startswith("Prioritization")
-            st.success(f"Mode: {mode}")
-            go("home")
+            go("home"); st.stop()
 
 # ---------- Section 7: AI Suggestions + Review ----------
 def page_ai_select():
@@ -436,7 +413,7 @@ def page_ai_select():
                         suggestions.append((s, m, iq, dp))
         st.session_state["ai_suggested"] = suggestions[:30]
         st.session_state["ai_chosen"] = set()
-        go("ai_review")
+        go("ai_review"); st.stop()
 
 def page_ai_review():
     topbar("Review suggested dotpoints", back_to="ai_select")
@@ -445,6 +422,7 @@ def page_ai_review():
     chosen: Set[tuple] = set(st.session_state.get("ai_chosen", set()))
     suggestions = st.session_state.get("ai_suggested", [])
 
+    # Boxed, inner-scrolling list
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="scroll-head">AI suggested dotpoints</div>', unsafe_allow_html=True)
     st.markdown('<div class="scroll-body">', unsafe_allow_html=True)
@@ -462,6 +440,7 @@ def page_ai_review():
                 chosen.add(item)
         with c2:
             if st.button("❌ Remove", key=f"ai_drop_{idx}", use_container_width=True):
+                # not appending -> removed next render
                 st.markdown('</div>', unsafe_allow_html=True)
                 continue
         st.markdown('</div>', unsafe_allow_html=True)
@@ -480,9 +459,8 @@ def page_ai_review():
         if st.button("Apply selection", type="primary"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            for it in chosen:
-                st.session_state["sel_dotpoints"].add(it)
-            st.success("Added selected dotpoints to your selection.")
+            for it in chosen: st.session_state["sel_dotpoints"].add(it)
+            st.success("Added to your selection.")
     with right:
         if st.button("Done"):
             st.session_state["ai_suggested"] = temp
@@ -491,33 +469,50 @@ def page_ai_review():
     st.markdown('</div>', unsafe_allow_html=True)  # foot
     st.markdown('</div>', unsafe_allow_html=True)  # wrap
 
-# ---------- Section 8: Router ----------
+# ---------- Section 8: Router (no lambdas that call go() mid-render) ----------
+def route_home(): page_home()
+def route_srs_menu(): page_srs_menu()
+
+def route_select_subject_main(): page_select_subject_main()
+
+def route_cram_subjects(): page_cram_subjects()
+def route_cram_subject_drill(): page_cram_subject_drill()
+def route_cram_review(): page_cram_review()
+def route_cram_how(): page_cram_how()
+
+def route_srs_subjects():
+    page_subjects("srs_subject_drill", "srs_review", back_to="srs_menu")
+
+def route_srs_subject_drill():
+    s = st.session_state.get("focus_subject")
+    if not s:
+        go("srs_subjects"); st.stop()
+    page_subject_drill(s, "srs_review", "srs_subjects")
+
+def route_srs_review():
+    page_review_selected("Review Selection (SR)", "srs_menu", "srs_subjects")
+
+def route_ai_select(): page_ai_select()
+def route_ai_review(): page_ai_review()
+
 ROUTES = {
-    "home": page_home,
-    "srs_menu": page_srs_menu,
+    "home": route_home,
+    "srs_menu": route_srs_menu,
 
-    # Manual selection flows
-    "select_subject_main": page_select_subject_main,
-    "cram_subjects": page_cram_subjects,
-    "cram_subject_drill": page_cram_subject_drill,
-    "cram_review": page_cram_review,
-    "cram_how": page_cram_how,
+    "select_subject_main": route_select_subject_main,
 
-    # SRS choose subject (same UI, different back)
-    "srs_subjects": lambda: page_subjects("srs_subject_drill", "srs_review", back_to="srs_menu"),
-    "srs_subject_drill": lambda: page_subject_drill(
-        st.session_state.get("focus_subject"), "srs_review", "srs_subjects"
-    ) if st.session_state.get("focus_subject") else go("srs_subjects"),
-    "srs_review": lambda: page_review_selected("Review Selection (SR)", "srs_menu", "srs_subjects"),
+    "cram_subjects": route_cram_subjects,
+    "cram_subject_drill": route_cram_subject_drill,
+    "cram_review": route_cram_review,
+    "cram_how": route_cram_how,
 
-    # AI selection
-    "ai_select": page_ai_select,
-    "ai_review": page_ai_review,
+    "srs_subjects": route_srs_subjects,
+    "srs_subject_drill": route_srs_subject_drill,
+    "srs_review": route_srs_review,
+
+    "ai_select": route_ai_select,
+    "ai_review": route_ai_review,
 }
 
-ROUTES[st.session_state["route"]]()
-
-# ---------- Section 9: PLACEHOLDERS (paste engines later) ----------
-# def page_srs_engine(): ...
-# def page_exam_mode(): ...
-# def page_tutor_flow(): ...
+ROUTES.get(st.session_state["route"], route_home)()
+# ---------- Section 9: (engines to be added later) ----------
