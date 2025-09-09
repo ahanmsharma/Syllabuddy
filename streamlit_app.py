@@ -285,34 +285,64 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
     """
-    A clean review list:
-      - Each item in a bordered box with a green (kept) or red (removed) top strip.
-      - One checkbox to toggle "Keep this".
-      - Sticky header & sticky footer so only the middle scrolls.
+    Review list page:
+      - Each item shows in a bordered line.
+      - Buttons 'Keep' / 'Remove' toggle instantly.
+      - Color border: green = kept, red = removed.
+      - Simple scrolling (no sticky header/foot).
     """
     topbar(title, back_to=back_to)
 
-    # Start with the current selection as "kept"
+    # Start with the current selection as kept
     temp = set(rows)
 
-    # --- Sticky header with counters ---
-    kept_count = len(temp)
-    total_count = len(rows)
-    removed_count = total_count - kept_count
+    st.write(f"**Total: {len(rows)} items**")
+    for idx, item in enumerate(rows):
+        s, m, iq, dp = item
+        kept = item in temp
+        border_color = "#16a34a" if kept else "#b91c1c"
+        label = "Kept" if kept else "Removed"
 
-    st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
-    st.markdown(
-        f'''
-        <div class="scroll-head">
-          {title}
-          <div style="float:right; font-weight:600;">
-            <span style="color:#16a34a;">Kept: {kept_count}</span> &nbsp;|&nbsp;
-            <span style="color:#b91c1c;">Removed: {removed_count}</span>
-          </div>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
+        # row box
+        st.markdown(
+            f"""
+            <div style="border:2px solid {border_color};
+                        border-radius:10px;
+                        padding:8px 12px;
+                        margin-bottom:10px;">
+              <b>{s} → {m} → {iq}</b> — {dp}<br>
+              <span style="color:{border_color}; font-weight:600;">{label}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        colA, colB = st.columns([1,1])
+        with colA:
+            if st.button("Keep", key=f"rev_keep_{idx}"):
+                temp.add(item)
+                st.rerun()
+        with colB:
+            if st.button("Remove", key=f"rev_remove_{idx}"):
+                if item in temp:
+                    temp.remove(item)
+                st.rerun()
+
+    # footer actions
+    st.divider()
+    c1, c2, c3 = st.columns([1,1,1])
+    with c1:
+        if st.button("← Back"):
+            go(back_to)
+    with c2:
+        if st.button(apply_label, type="primary"):
+            st.session_state["sel_dotpoints"] = set(temp)
+            st.success("Selection updated.")
+    with c3:
+        if st.button(submit_label, type="primary"):
+            st.session_state["sel_dotpoints"] = set(temp)
+            go(after_submit_route)
+
 
     # --- Scroll body: boxes with colored strip + checkbox toggle ---
     st.markdown('<div class="scroll-body">', unsafe_allow_html=True)
