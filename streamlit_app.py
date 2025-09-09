@@ -39,13 +39,6 @@ st.markdown("""
   .btn.ghost { background:#f8fafc; }
   .btn.warn { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
 
-  /* Big action buttons */
-  .big-btn {
-    display:inline-block; padding:18px 24px; border-radius:14px; border:1px solid #d1d5db;
-    background:#f8fafc; text-decoration:none; color:#111; font-weight:700; width:100%; text-align:center;
-  }
-  .big-btn:hover { background:#eef2ff; border-color:#93c5fd; }
-
   /* Fallback grid (if gestures unavailable) */
   .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
   .card { border:2px solid #e5e7eb; border-radius:14px; padding:14px; background:#fff; position:relative; }
@@ -87,7 +80,7 @@ def render_gesture_grid(items: List[dict], long_press_ms: int = 450, key: str = 
     """
     items: [{id, title, subtitle, selected}]
     Returns {"type":"select"|"open","id": "..."} or None.
-    - When gestures component exists → use it.
+    - When gestures component exists → use it (click=open, long-press=select).
     - Else → fallback with buttons (still single-click Open).
     """
     if GESTURES_OK:
@@ -195,7 +188,7 @@ def topbar(title: str, back_to: str | None = None):
 
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
-    # Make sure this isn't wrapped in extra containers/columns to keep inner scroll local
+    # Only inner list scrolls; header & footer stick
     topbar(title, back_to=back_to)
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
     st.markdown(f'<div class="scroll-head">{title}</div>', unsafe_allow_html=True)
@@ -454,3 +447,77 @@ def page_ai_review():
 
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="scroll-head">AI suggested dotpoints</div>', unsafe_allow_html=True)
+    st.markdown('<div class="scroll-body">', unsafe_allow_html=True)
+
+    temp = []
+    for idx, item in enumerate(suggestions):
+        s, m, iq, dp = item
+        sel = item in chosen
+        klass = "dp-item selected" if sel else "dp-item"
+        st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
+        st.write(f"**{s} → {m} → {iq}** — {dp}")
+        c1, c2 = st.columns([1,1])
+        with c1:
+            if st.button("✅ Keep", key=f"ai_keep_{idx}", use_container_width=True):
+                chosen.add(item)
+        with c2:
+            if st.button("❌ Remove", key=f"ai_drop_{idx}", use_container_width=True):
+                st.markdown('</div>', unsafe_allow_html=True)
+                continue
+        st.markdown('</div>', unsafe_allow_html=True)
+        temp.append(item)
+
+    st.markdown('</div>', unsafe_allow_html=True)  # body
+
+    st.markdown('<div class="scroll-foot">', unsafe_allow_html=True)
+    left, mid, right = st.columns([1,1,1])
+    with left:
+        if st.button("← Back to Choose Subject"):
+            st.session_state["ai_suggested"] = temp
+            st.session_state["ai_chosen"] = chosen
+            go("cram_subjects"); st.stop()
+    with mid:
+        if st.button("Apply selection", type="primary"):
+            st.session_state["ai_suggested"] = temp
+            st.session_state["ai_chosen"] = chosen
+            for it in chosen:
+                st.session_state["sel_dotpoints"].add(it)
+            st.success("Added selected dotpoints to your selection.")
+    with right:
+        if st.button("Done"):
+            st.session_state["ai_suggested"] = temp
+            st.session_state["ai_chosen"] = chosen
+            go("home"); st.stop()
+    st.markdown('</div>', unsafe_allow_html=True)  # foot
+    st.markdown('</div>', unsafe_allow_html=True)  # wrap
+
+# ---------- Section 8: Router ----------
+ROUTES = {
+    "home": page_home,
+    "srs_menu": page_srs_menu,
+
+    # Manual selection flows
+    "select_subject_main": page_select_subject_main,
+    "cram_subjects": page_cram_subjects,
+    "cram_subject_drill": page_cram_subject_drill,
+    "cram_review": page_cram_review,
+    "cram_how": page_cram_how,
+
+    # SRS choose subject (same UI, different back)
+    "srs_subjects": lambda: page_subjects("srs_subject_drill", "srs_review", back_to="srs_menu"),
+    "srs_subject_drill": lambda: page_subject_drill(
+        st.session_state.get("focus_subject"), "srs_review", "srs_subjects"
+    ) if st.session_state.get("focus_subject") else go("srs_subjects"),
+    "srs_review": lambda: page_review_selected("Review Selection (SR)", "srs_menu", "srs_subjects"),
+
+    # AI selection
+    "ai_select": page_ai_select,
+    "ai_review": page_ai_review,
+}
+
+ROUTES[st.session_state["route"]]()
+
+# ---------- Section 9: PLACEHOLDERS (paste engines later) ----------
+# def page_srs_engine(): ...
+# def page_exam_mode(): ...
+# def page_tutor_flow(): ...
