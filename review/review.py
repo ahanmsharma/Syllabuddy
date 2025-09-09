@@ -27,9 +27,11 @@ def review_box(
     """
     topbar(title, back_to=back_to)
 
+    # Unique prefix for this render to avoid duplicate key collisions
     inst = uuid.uuid4().hex[:6]
     KP = f"{route_key}_rb_{inst}"
 
+    # Per-route removed set
     removed_key = f"__rb_removed__::{route_key}"
     if removed_key not in st.session_state:
         st.session_state[removed_key] = set()
@@ -67,6 +69,7 @@ def review_box(
     kept_count = len(rows) - len(removed)
     st.info(f"Kept: {kept_count}   |   Removed: {len(removed)}")
 
+    # Footer
     st.markdown('<div class="review-footer">', unsafe_allow_html=True)
     f1, f2, f3 = st.columns(3)
 
@@ -79,7 +82,7 @@ def review_box(
         st.session_state["sel_dotpoints"] = kept_items
         st.success("Selection updated.")
         if go_next:
-            st.session_state.pop(removed_key, None)
+            st.session_state.pop(removed_key, None)  # clear cache for next visit
             go(after_submit_route)
 
     with f2:
@@ -92,8 +95,10 @@ def review_box(
 
     st.markdown("</div>", unsafe_allow_html=True)  # end footer
 
+# ---- PAGE FUNCTIONS (these MUST exist to import) ----
+
 def page_cram_review():
-    rows = sorted(list(st.session_state["sel_dotpoints"]))
+    rows = sorted(list(st.session_state.get("sel_dotpoints", set())))
     review_box(
         route_key="cram",
         title="Review Selection (Cram)",
@@ -103,7 +108,7 @@ def page_cram_review():
     )
 
 def page_srs_review():
-    rows = sorted(list(st.session_state["sel_dotpoints"]))
+    rows = sorted(list(st.session_state.get("sel_dotpoints", set())))
     review_box(
         route_key="srs",
         title="Review Selection (SR)",
