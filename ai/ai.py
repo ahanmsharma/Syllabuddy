@@ -27,7 +27,7 @@ def page_ai_select():
                         suggestions.append((s, m, iq, dp))
         st.session_state["ai_suggested"] = suggestions[:40]
 
-        # Track per-item status: "keep" | "remove"
+        # Per-item status: None | "keep" | "remove"
         st.session_state["ai_status"] = {}  # key -> "keep"/"remove"
         go("ai_review")
 
@@ -35,14 +35,10 @@ def page_ai_review():
     topbar("Review suggested dotpoints", back_to="ai_select")
     st.write("Click ✅ Keep (green) or ❌ Remove (red). Tally updates live. Use 'Apply selection' to add kept items.")
 
-    # Ensure required state
     suggested = st.session_state.get("ai_suggested", [])
-    status = st.session_state.get("ai_status", {})
-    if status is None:
-        status = {}
-        st.session_state["ai_status"] = status
+    status: dict = st.session_state.get("ai_status", {}) or {}
+    st.session_state["ai_status"] = status
 
-    # Unique prefix for this render (avoid duplicate keys)
     inst = uuid.uuid4().hex[:6]
     KP = f"ai_rev_{inst}"
 
@@ -55,7 +51,6 @@ def page_ai_review():
         is_removed = (tag == "remove")
         is_kept    = (tag == "keep")
 
-        # classes & pill
         card_class = "dp-card green" if is_kept else ("dp-card red" if is_removed else "dp-card")
         pill_html  = (
             '<span class="pill keep">Kept</span>' if is_kept
@@ -98,7 +93,6 @@ def page_ai_review():
             go("cram_subjects")
 
     def _apply_selection(go_home: bool):
-        # Add kept items to global selection
         sel = st.session_state.get("sel_dotpoints", set())
         for item in suggested:
             if st.session_state["ai_status"].get(_key_for(item)) == "keep":
