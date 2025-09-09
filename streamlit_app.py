@@ -283,29 +283,39 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
             go("cram_review" if key_prefix == "cram" else "srs_review")
           
 def review_box(route_key: str, title: str, rows: List[tuple],
-               apply_label: str, submit_label: str,
                back_to: str, after_submit_route: str):
     """
-    Simple, reliable review list:
-      - Each item shows in a slim bordered row (green=Kept, red=Removed).
-      - Two buttons per row: Keep / Remove (unique keys per route).
-      - Normal page scroll (no sticky wrappers).
-      - Back / Apply / Submit at the bottom.
-    route_key: pass a short unique prefix per page (e.g., "cram" or "srs") to avoid key collisions.
+    Minimal + robust Review UI:
+      - Every item is Kept by default (green border).
+      - Click 'Remove' to mark red; click 'Keep' to revert.
+      - 'Apply changes' writes to sel_dotpoints (keeps only green).
+      - 'Submit & Continue' also writes and navigates forward.
+      - Uses a per-route 'removed set' so SRS and CRAM never collide.
     """
     topbar(title, back_to=back_to)
 
-    # Start with current selection as Kept
-    current = set(rows)
+    # --- state bucket for removed items on this route
+    removed_key = f"__rb_removed__::{route_key}"
+    if removed_key not in st.session_state:
+        st.session_state[removed_key] = set()
+    removed: Set[str] = st.session_state[removed_key]
 
-    st.write(f"**Total: {len(rows)} items**")
+    # helper to make a stable key per item (avoid tuple hashing surprises)
+    def make_key(item: tuple) -> str:
+        s, m, iq, dp = item
+        return f"{s}||{m}||{iq}||{dp}"
+
+    st.write(f"**Total items:** {len(rows)}")
+
+    # --- list
     for idx, item in enumerate(rows):
         s, m, iq, dp = item
-        kept = item in current
-        border = "#16a34a" if kept else "#b91c1c"
-        label = "Kept" if kept else "Removed"
+        k = make_key(item)
+        is_removed = k in removed
 
-        # Row (no widget inside custom div except buttons below)
+        border = "#b91c1c" if is_removed else "#16a34a"
+        label = "Removed" if is_removed else "Kept"
+
         st.markdown(
             f"""
             <div style="border:2px solid {border};
@@ -321,15 +331,41 @@ def review_box(route_key: str, title: str, rows: List[tuple],
 
         left, right = st.columns(2)
         with left:
-            if st.button("Keep", key=f"{route_key}_keepbtn_{idx}"):
-                if item not in current:
-                    current.add(item)
+            if st.button("Keep", key=f"{route_key}_keep_{idx}"):
+                if k in removed:
+                    removed.remove(k)
                 st.rerun()
         with right:
-            if st.button("Remove", key=f"{route_key}_removebtn_{idx}"):
-                if item in current:
-                    current.discard(item)
+            if st.button("Remove", key=f"{route_key}_remove_{idx}"):
+                removed.add(k)
                 st.rerun()
+
+    # --- footer actions (single set of buttons)
+    kept_count = len(rows) - len(removed)
+    st.info(f"Kept: {kept_count}   |   Removed: {len(removed)}")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button(f"← Back", key=f"{route_key}_back"):
+            go(back_to)
+
+    def write_selection_and_maybe_go(go_next: bool):
+        # keep only items whose key is not in removed
+        kept_items = {item for item in rows if make_key(item) not in removed}
+        st.session_state["sel_dotpoints"] = kept_items
+        st.success("Selection updated.")
+        if go_next:
+            # clear removed list for a fresh next visit
+            st.session_state.pop(removed_key, None)
+            go(after_submit_route)
+
+    with c2:
+        if st.button("Apply changes", key=f"{route_key}_apply", type="primary"):
+            write_selection_and_maybe_go(go_next=False)
+
+    with c3:
+        if st.button("Submit & Continue", key=f"{route_key}_submit", type="primary"):
+            write_selection_and_maybe_go(go_next=True)
 
     # Footer actions (always visible)
     st.divider()
@@ -507,8 +543,6 @@ def page_cram_review():
         route_key="cram",
         title="Review Selection (Cram)",
         rows=rows,
-        apply_label="Apply changes",
-        submit_label="Submit & Continue",
         back_to="cram_subjects",
         after_submit_route="cram_how",
     )
@@ -560,8 +594,6 @@ def page_srs_review():
         route_key="srs",
         title="Review Selection (SR)",
         rows=rows,
-        apply_label="Apply changes",
-        submit_label="Submit & Continue",
         back_to="srs_subjects",
         after_submit_route="srs_menu",
     )
