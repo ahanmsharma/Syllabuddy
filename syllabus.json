@@ -1,20 +1,53 @@
 {
   "Biology": {
-    "Module 1: Cells as the Basis of Life": {
-      "IQ: Cell structure": [
-        "Describe the structure and function of the plasma membrane",
-        "Explain the role of organelles in the cell"
+    "Module 5: Heredity": {
+      "IQ 5.1: Meiosis & Variation": [
+        "Outline the stages of meiosis and their role in genetic variation",
+        "Explain independent assortment and crossing over",
+        "Predict outcomes of nondisjunction events"
       ],
-      "IQ: Membranes": [
-        "Explain diffusion and osmosis"
+      "IQ 5.2: Inheritance Patterns": [
+        "Apply Mendelian ratios to monohybrid and dihybrid crosses",
+        "Analyse codominance and incomplete dominance",
+        "Interpret pedigrees to infer inheritance patterns"
+      ]
+    },
+    "Module 6: Genetic Change": {
+      "IQ 6.1: Mutations": [
+        "Describe point mutations and their effects on polypeptides",
+        "Explain chromosomal mutations and consequences",
+        "Evaluate mutagens and DNA repair mechanisms"
+      ],
+      "IQ 6.2: Biotechnology": [
+        "Explain PCR, gel electrophoresis, and DNA sequencing",
+        "Assess applications and ethics of gene technologies",
+        "Describe CRISPR-Cas9 mechanism and limitations"
       ]
     }
   },
   "Chemistry": {
-    "Module 1: Properties of Matter": {
-      "IQ: Atomic structure": [
-        "Describe the structure of the atom",
-        "Explain isotopes and relative atomic mass"
+    "Module 5: Equilibrium and Acid Reactions": {
+      "IQ 5.1: Chemical Equilibrium": [
+        "Define dynamic equilibrium and equilibrium constant K",
+        "Predict Le Châtelier responses to disturbances",
+        "Relate reaction quotient Q to direction of shift"
+      ],
+      "IQ 5.2: Acids and Bases": [
+        "Use Bronsted-Lowry theory to identify acid-base pairs",
+        "Calculate pH from strong acid/base concentration",
+        "Compare weak vs strong acids using Ka"
+      ]
+    },
+    "Module 6: Acid/Base and Quantitative Analysis": {
+      "IQ 6.1: Buffers": [
+        "Explain buffer action with Henderson-Hasselbalch equation",
+        "Design buffer solutions for a target pH",
+        "Predict buffer capacity changes upon dilution or addition"
+      ],
+      "IQ 6.2: Titrations": [
+        "Perform titration calculations for monoprotic acids",
+        "Interpret titration curves and equivalence points",
+        "Select suitable indicators for different titrations"
       ]
     }
   }
