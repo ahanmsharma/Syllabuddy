@@ -3,7 +3,7 @@
 # - Section 0: Imports, Config, Styles
 # - Section 1: Data Loaders
 # - Section 2: Global State / Helpers
-# - Section 3: Reusable UI (Topbar, Cards, Grids)
+# - Section 3: Reusable UI (Topbar, Gestures, Review Box)
 # - Section 4: Selection Engine (Subjects → Modules → IQs → Dotpoints)
 # - Section 5: Home & Menus (Home, SRS menu, Select Subject)
 # - Section 6: Cram Mode + Prioritization Review
@@ -14,20 +14,23 @@
 
 # ---------- Section 0: Imports, Config, Styles ----------
 import json
+import pathlib
 from typing import Dict, List, Tuple, Set
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Syllabuddy", layout="wide")
 
-# Make the page title sit high (less padding), keep everything crisp
+# Make the page title sit higher (less padding), keep everything crisp
 st.markdown("""
 <style>
-  .block-container { max-width: 1280px; padding-top: 8px; margin: auto; } /* tighter top */
+  .block-container { max-width: 1280px; padding-top: 6px; margin: auto; } /* tighter top */
   header {visibility: hidden;}
   #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 
   /* Top bar (back arrow + back button inline) */
-  .topbar { display:flex; align-items:center; justify-content:space-between; margin: 2px 0 8px 0; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; margin: 0 0 8px 0; }
   .topbar-left { display:flex; align-items:center; gap:8px; }
 
   /* Buttons */
@@ -43,11 +46,9 @@ st.markdown("""
   }
   .big-btn:hover { background:#eef2ff; border-color:#93c5fd; }
 
-  /* Cards + grid */
+  /* Cards + grid (fallback styles in case gestures component isn't used) */
   .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-  .card {
-    border:2px solid #e5e7eb; border-radius:14px; padding:14px; background:#fff; position:relative;
-  }
+  .card { border:2px solid #e5e7eb; border-radius:14px; padding:14px; background:#fff; position:relative; }
   .card.selected { border-color:#3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.25) inset; }
   .card-title { font-weight:800; margin-bottom:.35rem; }
   .card-sub { color:#4b5563; font-size:.95rem; margin-bottom:.35rem; }
@@ -55,18 +56,22 @@ st.markdown("""
 
   /* Sticky scroll container (Review screens) */
   .scroll-wrap { display:flex; flex-direction:column; height:70vh; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; }
-  .scroll-head { padding:12px 14px; font-weight:900; background:#f8fafc; border-bottom:1px solid #e5e7eb; }
+  .scroll-head { padding:12px 14px; font-weight:900; background:#f8fafc; border-bottom:1px solid #e5e7eb; position: sticky; top: 0; z-index: 1; }
   .scroll-body { flex:1; overflow:auto; padding:12px 14px; }
-  .scroll-foot { padding:12px 14px; background:#f8fafc; border-top:1px solid #e5e7eb; }
+  .scroll-foot { padding:12px 14px; background:#f8fafc; border-top:1px solid #e5e7eb; position: sticky; bottom: 0; z-index: 1; }
 
   /* Review dotpoint item */
-  .dp-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:10px; }
+  .dp-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:10px; background: #fff; }
   .dp-item.selected { border-color:#16a34a; box-shadow: inset 0 0 0 2px rgba(22,163,74,.2); }
 
   /* Tiny badges */
   .badge { display:inline-block; font-size:.9rem; padding:4px 8px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:999px; }
 </style>
 """, unsafe_allow_html=True)
+
+# ---------- gestures component declaration ----------
+GESTURE_BUILD_DIR = str(pathlib.Path(__file__).parent / "frontend_gestures" / "build")
+gesture_grid = components.declare_component("gesture_grid", path=GESTURE_BUILD_DIR)
 
 # ---------- Section 1: Data Loaders ----------
 @st.cache_data(show_spinner=False)
@@ -118,42 +123,7 @@ ensure_state()
 def go(route: str):
     st.session_state["route"] = route
 
-# ---------- Section 3: Reusable UI (Topbar, Cards, Grids) ----------
-def topbar(title: str, back_to: str | None = None):
-    c1, c2 = st.columns([1,6], vertical_alignment="center")
-    with c1:
-        if back_to:
-            # Arrow and back are inline on the left
-            colL, colR = st.columns([1,3])
-            with colL:
-                if st.button("⬅", key=f"arrow_{title}"):
-                    go(back_to)
-                    st.stop()
-            with colR:
-                if st.button("Back", key=f"back_{title}", use_container_width=True):
-                    go(back_to)
-                    st.stop()
-    with c2:
-        st.title(title)
-
-def card(title: str, sub: str, selected: bool, open_key: str, select_key: str) -> str | None:
-    klass = "card selected" if selected else "card"
-    st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
-    st.markdown(f'<div class="card-title">{title}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="card-sub">{sub}</div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Open", key=open_key, use_container_width=True):
-            st.markdown("</div>", unsafe_allow_html=True)
-            return "open"
-    with c2:
-        if st.button("Select / Unselect", key=select_key, use_container_width=True):
-            st.markdown("</div>", unsafe_allow_html=True)
-            return "toggle"
-    st.markdown("</div>", unsafe_allow_html=True)
-    return None
-
-# helpers to add/remove full levels
+# Selection helpers
 def add_all_modules(subject: str, on: bool):
     for m in MODS[subject]:
         add_all_iqs(subject, m, on)
@@ -179,136 +149,53 @@ def is_module_selected(subject: str, module: str) -> bool:
 def is_iq_selected(subject: str, module: str, iq: str) -> bool:
     return any((s == subject and m == module and i == iq) for (s, m, i, dp) in st.session_state["sel_dotpoints"])
 
-# ---------- Section 4: Selection Engine ----------
-def page_subjects(subject_next_route: str, review_route: str, back_to: str | None):
-    """Subjects-only page. Drill into ONE subject at a time.
-       Selections persist across subjects; review page aggregates all.
+# ---------- Section 3: Reusable UI (Topbar, Gestures, Review Box) ----------
+def topbar(title: str, back_to: str | None = None):
+    # Inline arrow + back button, title tight to top
+    c1, c2 = st.columns([1,6], vertical_alignment="center")
+    with c1:
+        if back_to:
+            colL, colR = st.columns([1,3])
+            with colL:
+                if st.button("⬅", key=f"arrow_{title}"):
+                    go(back_to); st.stop()
+            with colR:
+                if st.button("Back", key=f"back_{title}", use_container_width=True):
+                    go(back_to); st.stop()
+    with c2:
+        st.title(title)
+
+def render_gesture_grid(items: List[dict], long_press_ms: int = 450, key: str = "grid"):
     """
-    topbar("Choose Subject", back_to=back_to)
-    st.write("Open a subject to pick modules/IQs/dotpoints, or toggle entire subject selection.")
+    items: [{id, title, subtitle, selected}]
+    Returns a dict like {"type":"select"|"open","id": "..."} or None.
+    (This component implements: single-click = open, long-press = select)
+    """
+    return gesture_grid(items=items, longPressMs=long_press_ms, key=key, default=None)
 
-    # ensure focus cleared when entering subjects page
-    st.session_state["focus_subject"] = None
-    st.session_state["focus_module"] = None
-    st.session_state["focus_iq"] = None
-
-    st.markdown('<div class="grid">', unsafe_allow_html=True)
-    for s in SUBJECTS:
-        selected = is_subject_selected(s)
-        action = card(
-            title=s,
-            sub=f"{len(MODS[s])} modules",
-            selected=selected,
-            open_key=f"open_subj_{s}",
-            select_key=f"toggle_subj_{s}",
-        )
-        if action == "open":
-            st.session_state["focus_subject"] = s
-            go(subject_next_route)
-            st.stop()
-        elif action == "toggle":
-            # if already selected, unselect entire tree; else select all
-            add_all_modules(s, on=not selected)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # review (aggregated across subjects)
-    st.write("")
-    c1, c2, c3 = st.columns([1,1,1])
-    with c2:
-        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go(review_route)
-            st.stop()
-
-def page_subject_drill(subject: str, next_route: str, back_to: str):
-    """Inside one subject: show modules → open IQs → open dotpoints"""
-    topbar(f"{subject} — Modules", back_to=back_to)
-
-    # MODULES
-    st.subheader("Modules")
-    st.markdown('<div class="grid">', unsafe_allow_html=True)
-    for m in MODS[subject]:
-        selected = is_module_selected(subject, m)
-        action = card(
-            title=m,
-            sub=f"{len(IQS[(subject, m)])} inquiry questions",
-            selected=selected,
-            open_key=f"open_mod_{subject}_{m}",
-            select_key=f"toggle_mod_{subject}_{m}",
-        )
-        if action == "open":
-            st.session_state["focus_module"] = (subject, m)
-        elif action == "toggle":
-            add_all_iqs(subject, m, on=not selected)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # IQs for focused module
-    sm = st.session_state.get("focus_module")
-    if sm and sm[0] == subject:
-        s, m = sm
-        st.subheader(f"IQs in {m}")
-        st.markdown('<div class="grid">', unsafe_allow_html=True)
-        for iq in IQS[(s, m)]:
-            selected = is_iq_selected(s, m, iq)
-            action = card(
-                title=iq,
-                sub=f"{len(DPS[(s, m, iq)])} dotpoints",
-                selected=selected,
-                open_key=f"open_iq_{s}_{m}_{iq}",
-                select_key=f"toggle_iq_{s}_{m}_{iq}",
-            )
-            if action == "open":
-                st.session_state["focus_iq"] = (s, m, iq)
-            elif action == "toggle":
-                add_all_dps(s, m, iq, on=not selected)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Dotpoints for focused IQ
-    smi = st.session_state.get("focus_iq")
-    if smi and smi[0] == subject:
-        s, m, iq = smi
-        st.subheader(f"Dotpoints in {iq}")
-        colA, colB = st.columns(2)
-        all_dps = DPS[(s, m, iq)]
-        for i, dp in enumerate(all_dps):
-            selected = (s, m, iq, dp) in st.session_state["sel_dotpoints"]
-            with (colA if i % 2 == 0 else colB):
-                klass = "card selected" if selected else "card"
-                st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
-                st.markdown(f'<div class="card-title">{dp}</div>', unsafe_allow_html=True)
-                if st.button("Select / Unselect", key=f"toggle_dp_{s}_{m}_{iq}_{i}", use_container_width=True):
-                    if selected:
-                        st.session_state["sel_dotpoints"].discard((s, m, iq, dp))
-                    else:
-                        st.session_state["sel_dotpoints"].add((s, m, iq, dp))
-                st.markdown('</div>', unsafe_allow_html=True)
-
-    # sticky submit
-    st.write("")
-    c1, c2, c3 = st.columns([1,1,1])
-    with c2:
-        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go(next_route)
-            st.stop()
-
-def page_review_selected(title: str, after_submit_route: str, back_to: str):
-    """Sticky header, scrollable dotpoint list, sticky submit bar; selections persist across app."""
+def review_box(
+    title: str,
+    rows: List[tuple],
+    apply_label: str,
+    submit_label: str,
+    back_to: str,
+    after_submit_route: str
+):
+    """Sticky title, boxed scroll area that only scrolls the dotpoints, sticky footer."""
     topbar(title, back_to=back_to)
 
-    # Snapshot current selection list
-    dplist = sorted(list(st.session_state["sel_dotpoints"]))
-
     st.markdown('<div class="scroll-wrap">', unsafe_allow_html=True)
-    st.markdown('<div class="scroll-head">Selected dotpoints</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="scroll-head">{title}</div>', unsafe_allow_html=True)
     st.markdown('<div class="scroll-body">', unsafe_allow_html=True)
 
-    # Make a temp set to allow removing items in this view
-    temp = set(dplist)
-    for idx, (s, m, iq, dp) in enumerate(dplist):
+    # local copy for removals
+    temp = set(rows)
+    for idx, (s, m, iq, dp) in enumerate(rows):
         sel = (s, m, iq, dp) in temp
         klass = "dp-item selected" if sel else "dp-item"
         st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
         st.write(f"**{s} → {m} → {iq}** — {dp}")
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns([1,1])
         with c1:
             if st.button("✅ Keep", key=f"keep_{idx}", use_container_width=True):
                 temp.add((s, m, iq, dp))
@@ -323,21 +210,138 @@ def page_review_selected(title: str, after_submit_route: str, back_to: str):
     left, mid, right = st.columns([1,1,1])
     with left:
         if st.button("← Back (keep selection)"):
-            # keep current selection set (no change), go back
-            go(back_to)
-            st.stop()
+            go(back_to); st.stop()
     with mid:
-        if st.button("Apply changes", type="primary"):
-            # write temp back to global selection
+        if st.button(apply_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
             st.success("Selection updated.")
     with right:
-        if st.button("Submit & Continue", type="primary"):
+        if st.button(submit_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
-            go(after_submit_route)
-            st.stop()
+            go(after_submit_route); st.stop()
     st.markdown('</div>', unsafe_allow_html=True)  # end foot
     st.markdown('</div>', unsafe_allow_html=True)  # end wrap
+
+# ---------- Section 4: Selection Engine ----------
+def page_subjects(subject_next_route: str, review_route: str, back_to: str | None):
+    """Subjects-only page. Drill into ONE subject at a time.
+       Selections persist across subjects; review page aggregates all.
+    """
+    topbar("Choose Subject", back_to=back_to)
+    st.caption("Single-click to **Open** · Long-press to **Select/Unselect** the entire subject.")
+
+    # clear focus on entry
+    st.session_state["focus_subject"] = None
+    st.session_state["focus_module"] = None
+    st.session_state["focus_iq"] = None
+
+    # SUBJECT GRID via gestures
+    items = []
+    for s in SUBJECTS:
+        items.append({
+            "id": f"subj::{s}",
+            "title": s,
+            "subtitle": f"{len(MODS[s])} modules",
+            "selected": is_subject_selected(s)
+        })
+    event = render_gesture_grid(items, key="grid_subjects")
+    if event:
+        et, eid = event.get("type"), event.get("id")
+        _, subj = eid.split("::", 1)
+        if et == "select":
+            add_all_modules(subj, on=not is_subject_selected(subj)); st.rerun()
+        elif et == "open":
+            st.session_state["focus_subject"] = subj
+            go(subject_next_route); st.stop()
+
+    st.write("")
+    c1, c2, c3 = st.columns([1,1,1])
+    with c2:
+        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
+            go(review_route); st.stop()
+
+def page_subject_drill(subject: str, next_route: str, back_to: str):
+    """Inside one subject: show modules → open IQs → open dotpoints (selections persist)."""
+    topbar(f"{subject} — Modules", back_to=back_to)
+    st.caption("Single-click to **Open** · Long-press to **Select/Unselect** the whole level. Dotpoints toggle on click.")
+
+    # MODULES (gestures)
+    items = []
+    for m in MODS[subject]:
+        items.append({
+            "id": f"mod::{subject}::{m}",
+            "title": m,
+            "subtitle": f"{len(IQS[(subject, m)])} inquiry questions",
+            "selected": is_module_selected(subject, m)
+        })
+    event = render_gesture_grid(items, key=f"grid_modules_{subject}")
+    if event:
+        et, eid = event.get("type"), event.get("id")
+        _, s, m = eid.split("::", 2)
+        if et == "select":
+            add_all_iqs(s, m, on=not is_module_selected(s, m)); st.rerun()
+        elif et == "open":
+            st.session_state["focus_module"] = (s, m); st.rerun()
+
+    # IQs (gestures)
+    sm = st.session_state.get("focus_module")
+    if sm and sm[0] == subject:
+        s, m = sm
+        st.subheader(f"IQs in {m}")
+        items2 = []
+        for iq in IQS[(s, m)]:
+            items2.append({
+                "id": f"iq::{s}::{m}::{iq}",
+                "title": iq,
+                "subtitle": f"{len(DPS[(s, m, iq)])} dotpoints",
+                "selected": is_iq_selected(s, m, iq)
+            })
+        event2 = render_gesture_grid(items2, key=f"grid_iqs_{s}_{m}")
+        if event2:
+            et, eid = event2.get("type"), event2.get("id")
+            _, ss, mm, ii = eid.split("::", 3)
+            if et == "select":
+                add_all_dps(ss, mm, ii, on=not is_iq_selected(ss, mm, ii)); st.rerun()
+            elif et == "open":
+                st.session_state["focus_iq"] = (ss, mm, ii); st.rerun()
+
+    # Dotpoints (single-click toggle)
+    smi = st.session_state.get("focus_iq")
+    if smi and smi[0] == subject:
+        s, m, iq = smi
+        st.subheader(f"Dotpoints in {iq}")
+        colA, colB = st.columns(2)
+        for i, dp in enumerate(DPS[(s, m, iq)]):
+            selected = (s, m, iq, dp) in st.session_state["sel_dotpoints"]
+            with (colA if i % 2 == 0 else colB):
+                klass = "card selected" if selected else "card"
+                st.markdown(f'<div class="{klass}">', unsafe_allow_html=True)
+                st.markdown(f'<div class="card-title">{dp}</div>', unsafe_allow_html=True)
+                # A single click toggle button (acts like click on the card)
+                if st.button("Toggle", key=f"toggle_dp_{s}_{m}_{iq}_{i}", use_container_width=True):
+                    if selected:
+                        st.session_state["sel_dotpoints"].discard((s, m, iq, dp))
+                    else:
+                        st.session_state["sel_dotpoints"].add((s, m, iq, dp))
+                st.markdown('</div>', unsafe_allow_html=True)
+
+    st.write("")
+    c1, c2, c3 = st.columns([1,1,1])
+    with c2:
+        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
+            go(next_route); st.stop()
+
+def page_review_selected(title: str, after_submit_route: str, back_to: str):
+    """Sticky title, BOXED scroll area (only dotpoints scroll), sticky submit bar."""
+    rows = sorted(list(st.session_state["sel_dotpoints"]))
+    review_box(
+        title=title,
+        rows=rows,
+        apply_label="Apply changes",
+        submit_label="Submit & Continue",
+        back_to=back_to,
+        after_submit_route=after_submit_route
+    )
 
 # ---------- Section 5: Home & Menus ----------
 def page_home():
@@ -388,7 +392,6 @@ def page_select_subject_main():
 
 # ---------- Section 6: Cram Mode + Prioritization Review ----------
 def page_cram_subjects():
-    # Subjects page for cram selection
     page_subjects(
         subject_next_route="cram_subject_drill",
         review_route="cram_review",
@@ -406,7 +409,6 @@ def page_cram_subject_drill():
     )
 
 def page_cram_review():
-    # After selecting dotpoints across any subjects, confirm list then choose "how to review"
     page_review_selected(
         title="Review Selection (Cram)",
         after_submit_route="cram_how",
@@ -451,7 +453,6 @@ def page_ai_review():
     topbar("Review suggested dotpoints", back_to="ai_select")
     st.write("Click ✅ to keep or ❌ to remove. Green border = kept. The middle scrolls; header & footer stick.")
 
-    # We keep a chosen set across runs
     chosen: Set[tuple] = set(st.session_state.get("ai_chosen", set()))
     suggestions = st.session_state.get("ai_suggested", [])
 
@@ -472,7 +473,7 @@ def page_ai_review():
                 chosen.add(item)
         with c2:
             if st.button("❌ Remove", key=f"ai_drop_{idx}", use_container_width=True):
-                # Do not append to temp => disappears on next render
+                # skip appending -> disappears next render
                 st.markdown('</div>', unsafe_allow_html=True)
                 continue
         st.markdown('</div>', unsafe_allow_html=True)
@@ -486,13 +487,11 @@ def page_ai_review():
         if st.button("← Back to Choose Subject"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            go("cram_subjects")
-            st.stop()
+            go("cram_subjects"); st.stop()
     with mid:
         if st.button("Apply selection", type="primary"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            # Copy chosen into the global selection set
             for it in chosen:
                 st.session_state["sel_dotpoints"].add(it)
             st.success("Added selected dotpoints to your selection.")
@@ -500,8 +499,7 @@ def page_ai_review():
         if st.button("Done"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            go("home")
-            st.stop()
+            go("home"); st.stop()
     st.markdown('</div>', unsafe_allow_html=True)  # foot
     st.markdown('</div>', unsafe_allow_html=True)  # wrap
 

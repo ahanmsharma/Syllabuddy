@@ -1,0 +1,22 @@
+{
+  "name": "gesture-grid-component",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "mkdir -p build/static/js build/static/css && esbuild src/index.tsx --bundle --minify --sourcemap --outfile=build/static/js/bundle.js && cp src/styles.css build/static/css/styles.css && printf '<!doctype html><div id=\"root\"></div>' > build/index.html",
+    "dev": "esbuild src/index.tsx --bundle --sourcemap --outfile=build/static/js/bundle.js --watch"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "streamlit-component-lib": "git+https://github.com/streamlit/streamlit-component-lib.git#9a4d5a0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.19.12",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=14.17"
+  }
+}

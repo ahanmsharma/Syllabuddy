@@ -1,0 +1,35 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px,1fr));
+  gap: 16px;
+}
+.card {
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+  position: relative;
+  user-select: none;
+}
+.card.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.25) inset;
+}
+.card-title { font-weight: 800; margin-bottom: .35rem; color: #111; }
+.card-sub { color: #4b5563; font-size: .95rem; margin-bottom: .35rem; }
+
+.hint {
+  font-size: .86rem;
+  color: #6b7280;
+}
+.progress-bar {
+  position: absolute; inset: -2px; border-radius: 14px;
+  border: 2px solid rgba(59,130,246,.7);
+  pointer-events: none;
+  clip-path: inset(0 round 14px);
+}
+.progress-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 0%;
+  background: rgba(59,130,246,.2);
+}
