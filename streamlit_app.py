@@ -282,36 +282,40 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
             go("cram_review" if key_prefix == "cram" else "srs_review")
           
+import uuid
+
 def review_box(route_key: str, title: str, rows: List[tuple],
                back_to: str, after_submit_route: str):
     """
-    Minimal + robust Review UI:
-      - Every item is Kept by default (green border).
-      - Click 'Remove' to mark red; click 'Keep' to revert.
-      - 'Apply changes' writes to sel_dotpoints (keeps only green).
-      - 'Submit & Continue' also writes and navigates forward.
-      - Uses a per-route 'removed set' so SRS and CRAM never collide.
+    Minimal + robust Review UI (unique keys per render):
+      - Kept by default (green). Remove -> red.
+      - Apply writes kept items; Submit writes + navigates.
+      - Keys include a per-call UUID to avoid duplicates even if rendered twice.
     """
     topbar(title, back_to=back_to)
 
-    # --- state bucket for removed items on this route
+    # Per-call unique prefix so keys never collide
+    instance = uuid.uuid4().hex[:8]
+    KP = f"{route_key}_rb_{instance}"
+
+    # State bucket for "removed items" for this route
     removed_key = f"__rb_removed__::{route_key}"
     if removed_key not in st.session_state:
         st.session_state[removed_key] = set()
     removed: Set[str] = st.session_state[removed_key]
 
-    # helper to make a stable key per item (avoid tuple hashing surprises)
-    def make_key(item: tuple) -> str:
+    def item_key(item: tuple) -> str:
         s, m, iq, dp = item
+        # stable string key (safer than hashing a tuple across runs)
         return f"{s}||{m}||{iq}||{dp}"
 
     st.write(f"**Total items:** {len(rows)}")
 
-    # --- list
+    # Render each row (simple HTML box + two buttons)
     for idx, item in enumerate(rows):
         s, m, iq, dp = item
-        k = make_key(item)
-        is_removed = k in removed
+        k = item_key(item)
+        is_removed = (k in removed)
 
         border = "#b91c1c" if is_removed else "#16a34a"
         label = "Removed" if is_removed else "Kept"
@@ -331,40 +335,39 @@ def review_box(route_key: str, title: str, rows: List[tuple],
 
         left, right = st.columns(2)
         with left:
-            if st.button("Keep", key=f"{route_key}_keep_{idx}"):
+            if st.button("Keep", key=f"{KP}_keep_{idx}"):
                 if k in removed:
                     removed.remove(k)
                 st.rerun()
         with right:
-            if st.button("Remove", key=f"{route_key}_remove_{idx}"):
+            if st.button("Remove", key=f"{KP}_remove_{idx}"):
                 removed.add(k)
                 st.rerun()
 
-    # --- footer actions (single set of buttons)
+    # Footer (single set of controls, unique keys via KP)
     kept_count = len(rows) - len(removed)
     st.info(f"Kept: {kept_count}   |   Removed: {len(removed)}")
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button(f"← Back", key=f"{route_key}_back"):
+        if st.button("← Back", key=f"{KP}_back"):
             go(back_to)
 
     def write_selection_and_maybe_go(go_next: bool):
-        # keep only items whose key is not in removed
-        kept_items = {item for item in rows if make_key(item) not in removed}
+        kept_items = {item for item in rows if item_key(item) not in removed}
         st.session_state["sel_dotpoints"] = kept_items
         st.success("Selection updated.")
         if go_next:
-            # clear removed list for a fresh next visit
+            # clear route's removed marks so next visit is fresh
             st.session_state.pop(removed_key, None)
             go(after_submit_route)
 
     with c2:
-        if st.button("Apply changes", key=f"{route_key}_apply", type="primary"):
+        if st.button("Apply changes", key=f"{KP}_apply", type="primary"):
             write_selection_and_maybe_go(go_next=False)
 
     with c3:
-        if st.button("Submit & Continue", key=f"{route_key}_submit", type="primary"):
+        if st.button("Submit & Continue", key=f"{KP}_submit", type="primary"):
             write_selection_and_maybe_go(go_next=True)
 
     # Footer actions (always visible)
