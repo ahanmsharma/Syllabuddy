@@ -8,6 +8,7 @@ def load_syllabus() -> Dict:
     Loads syllabus.json if present, else returns fallback.
     Structure: {Subject: {Module: {IQ: [dotpoints...]}}}
     """
+    # look in repo root (one level up from this file's folder)
     here = os.path.dirname(__file__)
     path = os.path.join(os.path.dirname(here), "syllabus.json")
     if os.path.exists(path):
