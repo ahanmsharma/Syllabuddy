@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Syllabuddy Gestures</title>
+<style>
+  :root { --blue:#3b82f6; --blueSoft: rgba(59,130,246,.16); --gray:#e5e7eb; --text:#111; --muted:#4b5563; }
+  html,body { margin:0; padding:0; }
+  body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans; background:#fff; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap:16px; padding:8px; }
+  .card {
+    border:2px solid var(--gray); border-radius:14px; padding:14px; background:#fff; position:relative;
+    user-select:none; cursor:pointer; color: var(--text);
+  }
+  .card.selected { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(59,130,246,.25) inset; }
+  .card-title { font-weight:800; margin-bottom:.35rem; }
+  .card-sub { color: var(--muted); font-size:.95rem; margin-bottom:.35rem; }
+  .hint { font-size:.86rem; color:#6b7280; }
+
+  /* long-press visual */
+  .progress-ring {
+    position:absolute; inset:-2px; border-radius:14px; pointer-events:none; overflow:hidden;
+    border:2px solid rgba(59,130,246,.7);
+  }
+  .progress-fill {
+    position:absolute; left:0; top:0; bottom:0; width:0%;
+    background: var(--blueSoft);
+    transition: width .02s linear;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+(function(){
+  // ---- Streamlit component protocol (no external lib) ----
+  const q = new URLSearchParams(window.location.search);
+  const componentId = q.get("componentId");
+
+  function send(type, payload) {
+    window.parent.postMessage(Object.assign({isStreamlitMessage:true, type, componentId}, payload||{}), "*");
+  }
+  function setValue(val) { send("streamlit:setComponentValue", { value: val }); }
+  function setHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
+  function ready(){ send("streamlit:componentReady", { apiVersion: 1 }); }
+
+  // size health: keep iframe tall enough
+  const ro = new ResizeObserver(() => {
+    setHeight(document.documentElement.scrollHeight || document.body.scrollHeight || 200);
+  });
+  ro.observe(document.documentElement);
+  setInterval(() => setHeight(document.documentElement.scrollHeight || 200), 400);
+
+  ready();
+
+  let lastArgs = { items: [], longPressMs: 450 };
+
+  function render(args){
+    lastArgs = Object.assign({ longPressMs: 450 }, args || {});
+    const { items, longPressMs } = lastArgs;
+
+    const root = document.getElementById("root");
+    root.innerHTML = "";
+
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    root.appendChild(grid);
+
+    items.forEach((it) => {
+      const card = document.createElement("div");
+      card.className = "card" + (it.selected ? " selected" : "");
+
+      const t = document.createElement("div");
+      t.className = "card-title";
+      t.textContent = it.title;
+      card.appendChild(t);
+
+      if (it.subtitle) {
+        const s = document.createElement("div");
+        s.className = "card-sub";
+        s.textContent = it.subtitle;
+        card.appendChild(s);
+      }
+
+      const h = document.createElement("div");
+      h.className = "hint";
+      h.textContent = "Click to Open · Long-press to Select/Unselect";
+      card.appendChild(h);
+
+      // Long-press visuals
+      const ring = document.createElement("div");
+      ring.className = "progress-ring";
+      const fill = document.createElement("div");
+      fill.className = "progress-fill";
+      ring.appendChild(fill);
+      card.appendChild(ring);
+
+      // Gesture logic
+      let pressTimer = null;
+      let rafId = null;
+      let start = 0;
+      let didLongPress = false;
+
+      function cleanup(){
+        if (pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
+        if (rafId){ cancelAnimationFrame(rafId); rafId=null; }
+        fill.style.width = "0%";
+      }
+      function animate(){
+        const pct = Math.min(100, (performance.now() - start) / longPressMs * 100);
+        fill.style.width = pct + "%";
+        if (pct < 100) rafId = requestAnimationFrame(animate);
+      }
+
+      card.addEventListener("pointerdown", (e)=>{
+        didLongPress = false;
+        start = performance.now();
+        animate();
+        pressTimer = setTimeout(()=>{
+          cleanup();
+          didLongPress = true;
+          // include timestamp so Streamlit sees a new value every time
+          setValue({ type:"select", id: it.id, _ts: Date.now() });
+        }, longPressMs);
+      }, {passive:true});
+
+      card.addEventListener("pointerup", cleanup, {passive:true});
+      card.addEventListener("pointerleave", cleanup, {passive:true});
+
+      // Single click = open (do NOT fire if we just did a long-press)
+      card.addEventListener("click", (e)=>{
+        if (didLongPress) { didLongPress = false; return; }
+        setValue({ type:"open", id: it.id, _ts: Date.now() });
+      });
+
+      grid.appendChild(card);
+    });
+
+    // Size to content right after render
+    setHeight(document.documentElement.scrollHeight || document.body.scrollHeight || 200);
+  }
+
+  // Listen for Streamlit renders
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || !data.isStreamlitMessage) return;
+    if (data.type === "streamlit:render"){
+      try {
+        const args = (data.args && data.args.items) ? data.args : (data.args?.kwargs || data.args);
+        render(args);
+      } catch (e) {
+        render(lastArgs);
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
