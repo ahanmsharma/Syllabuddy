@@ -1,10 +1,9 @@
 # ===============================
-# S Y L L A B U D D Y  — clean, single-click, no custom component
+# S Y L L A B U D D Y — stable baseline (single-click, clean back, boxed review scroll)
 # ===============================
 
 import json
 import os
-import pathlib
 from typing import Dict, List, Set, Tuple, Optional
 
 import streamlit as st
@@ -14,7 +13,7 @@ st.set_page_config(page_title="Syllabuddy", layout="wide")
 # ---------- Global CSS ----------
 st.markdown("""
 <style>
-  .block-container { max-width: 1280px; padding-top: 6px; margin: auto; }
+  .block-container { max-width: 1200px; padding-top: 6px; margin: auto; }
   header {visibility: hidden;}
   #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 
@@ -63,25 +62,25 @@ st.markdown("""
 def load_syllabus() -> Dict:
     # { Subject: { Module: { IQ: [dotpoints...] } } }
     if not os.path.exists("syllabus.json"):
-        # tiny fallback so the app always runs
+        # minimal fallback so the app always runs
         return {
             "Biology": {
-                "Module 6": {
-                    "IQ1: Cell processes": [
-                        "Describe diffusion, osmosis, active transport",
-                        "Explain surface area to volume ratio impacts"
+                "Module 6: Genetic Change": {
+                    "IQ1: Mutations": [
+                        "Describe point vs frameshift mutations",
+                        "Explain mutagens and mutation rates"
                     ],
-                    "IQ2: Homeostasis": [
-                        "Define negative feedback with examples",
-                        "Explain thermoregulation mechanisms"
+                    "IQ2: Biotechnology": [
+                        "Outline PCR steps and applications",
+                        "Summarise CRISPR-Cas9 mechanism"
                     ]
                 }
             },
             "Chemistry": {
-                "Module 5": {
-                    "IQ1: Equilibrium": [
-                        "Le Chatelier’s principle applications",
-                        "Calculate Kc from concentrations"
+                "Module 5: Equilibrium": {
+                    "IQ1: Le Chatelier": [
+                        "Predict shifts for concentration, pressure, temperature changes",
+                        "Relate Kc to reaction quotient Q"
                     ]
                 }
             }
@@ -126,10 +125,12 @@ def ensure_state():
     st.session_state.setdefault("ai_chosen", set())
 
 ensure_state()
+
 def go(route: str):
     st.session_state["route"] = route
+    st.rerun()
 
-# ---------- Helpers ----------
+# ---------- Selection Helpers ----------
 def is_subject_selected(subject: str) -> bool:
     return any(s == subject for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
 
@@ -164,15 +165,19 @@ def topbar(title: str, back_to: Optional[str] = None):
             b1, b2 = st.columns([1,3])
             with b1:
                 if st.button("⬅", key=f"arrow_{title}"):
-                    go(back_to); st.stop()
+                    go(back_to)
             with b2:
                 if st.button("Back", key=f"back_{title}", use_container_width=True):
-                    go(back_to); st.stop()
+                    go(back_to)
     with c2:
         st.title(title)
 
-def subject_cards(subjects: List[str], key_prefix: str):
-    # Single-click Open; Select/Unselect button
+def subject_cards(subjects: List[str], key_prefix: str, back_to: Optional[str]):
+    if back_to:
+        topbar("Choose Subject", back_to=back_to)
+    else:
+        st.title("Choose Subject")
+    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
     cols = st.columns(2)
     for i, s in enumerate(subjects):
         with cols[i % 2]:
@@ -185,7 +190,8 @@ def subject_cards(subjects: List[str], key_prefix: str):
             with a:
                 if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
                     st.session_state["focus_subject"] = s
-                    go(f"{key_prefix}_modules"); st.stop()
+                    if key_prefix == "cram": go("cram_modules")
+                    else:                    go("srs_modules")
             with b:
                 if st.button(("Unselect" if selected else "Select"),
                              key=f"{key_prefix}_sel_{i}", use_container_width=True):
@@ -193,9 +199,10 @@ def subject_cards(subjects: List[str], key_prefix: str):
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-def module_cards(subject: str, modules: List[str], key_prefix: str, back_to: str):
+def module_cards(subject: str, key_prefix: str, back_to: str):
     topbar(f"{subject} — Modules", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+    modules = MODS.get(subject, [])
     cols = st.columns(2)
     for i, m in enumerate(modules):
         with cols[i % 2]:
@@ -206,19 +213,21 @@ def module_cards(subject: str, modules: List[str], key_prefix: str, back_to: str
             st.markdown(f'<div class="card-sub">{len(IQS.get((subject, m), []))} inquiry questions</div>', unsafe_allow_html=True)
             a, b = st.columns([3,2])
             with a:
-                if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
+                if st.button("Open", key=f"{key_prefix}_mod_open_{i}", use_container_width=True):
                     st.session_state["focus_module"] = (subject, m)
-                    go(f"{key_prefix}_iqs"); st.stop()
+                    if key_prefix == "cram": go("cram_iqs")
+                    else:                    go("srs_iqs")
             with b:
                 if st.button(("Unselect" if selected else "Select"),
-                             key=f"{key_prefix}_sel_{i}", use_container_width=True):
+                             key=f"{key_prefix}_mod_sel_{i}", use_container_width=True):
                     add_all_iqs(subject, m, on=not selected)
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-def iq_cards(subject: str, module: str, iqs: List[str], key_prefix: str, back_to: str):
+def iq_cards(subject: str, module: str, key_prefix: str, back_to: str):
     topbar(f"{subject} → {module} — IQs", back_to=back_to)
     st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+    iqs = IQS.get((subject, module), [])
     cols = st.columns(2)
     for i, iq in enumerate(iqs):
         with cols[i % 2]:
@@ -229,12 +238,13 @@ def iq_cards(subject: str, module: str, iqs: List[str], key_prefix: str, back_to
             st.markdown(f'<div class="card-sub">{len(DPS.get((subject, module, iq), []))} dotpoints</div>', unsafe_allow_html=True)
             a, b = st.columns([3,2])
             with a:
-                if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
+                if st.button("Open", key=f"{key_prefix}_iq_open_{i}", use_container_width=True):
                     st.session_state["focus_iq"] = (subject, module, iq)
-                    go(f"{key_prefix}_dotpoints"); st.stop()
+                    if key_prefix == "cram": go("cram_dotpoints")
+                    else:                    go("srs_dotpoints")
             with b:
                 if st.button(("Unselect" if selected else "Select"),
-                             key=f"{key_prefix}_sel_{i}", use_container_width=True):
+                             key=f"{key_prefix}_iq_sel_{i}", use_container_width=True):
                     add_all_dps(subject, module, iq, on=not selected)
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -250,7 +260,7 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
             css = "card selected" if selected else "card"
             st.markdown(f'<div class="{css}">', unsafe_allow_html=True)
             st.markdown(f'<div class="card-title">{dp}</div>', unsafe_allow_html=True)
-            if st.button("Toggle", key=f"{key_prefix}_toggle_{i}", use_container_width=True):
+            if st.button("Toggle", key=f"{key_prefix}_dp_toggle_{i}", use_container_width=True):
                 item = (subject, module, iq, dp)
                 if selected: st.session_state["sel_dotpoints"].discard(item)
                 else:        st.session_state["sel_dotpoints"].add(item)
@@ -260,11 +270,7 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
     mid = st.columns([1,1,1])[1]
     with mid:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            # Route uses prefix to pick correct review destination
-            if key_prefix.startswith("cram"):
-                go("cram_review"); st.stop()
-            else:
-                go("srs_review"); st.stop()
+            go("cram_review" if key_prefix == "cram" else "srs_review")
 
 def review_box(title: str, rows: List[tuple], apply_label: str,
                submit_label: str, back_to: str, after_submit_route: str):
@@ -295,7 +301,7 @@ def review_box(title: str, rows: List[tuple], apply_label: str,
     left, mid, right = st.columns([1,1,1])
     with left:
         if st.button("← Back (keep selection)"):
-            go(back_to); st.stop()
+            go(back_to)
     with mid:
         if st.button(apply_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
@@ -303,7 +309,7 @@ def review_box(title: str, rows: List[tuple], apply_label: str,
     with right:
         if st.button(submit_label, type="primary"):
             st.session_state["sel_dotpoints"] = set(temp)
-            go(after_submit_route); st.stop()
+            go(after_submit_route)
     st.markdown('</div>', unsafe_allow_html=True)  # foot
     st.markdown('</div>', unsafe_allow_html=True)  # wrap
 
@@ -314,10 +320,10 @@ def page_home():
     c1, c2 = st.columns(2, gap="large")
     with c1:
         if st.button("Spaced Repetition", use_container_width=True):
-            go("srs_menu"); st.stop()
+            go("srs_menu")
     with c2:
         if st.button("Select Subject", use_container_width=True):
-            go("select_subject_main"); st.stop()
+            go("select_subject_main")
 
 def page_srs_menu():
     topbar("Spaced Repetition", back_to="home")
@@ -330,12 +336,12 @@ def page_srs_menu():
     with c2:
         if st.button("Choose Subject (SR)", use_container_width=True):
             st.session_state["cram_mode"] = False
-            go("srs_subjects"); st.stop()
+            go("srs_subjects")
     with c3:
         if st.button("Cram Mode (mass select)", use_container_width=True):
             st.session_state["cram_mode"] = True
             st.session_state["prioritization_mode"] = False
-            go("cram_subjects"); st.stop()
+            go("cram_subjects")
 
 def page_select_subject_main():
     topbar("Select Subject", back_to="home")
@@ -345,42 +351,34 @@ def page_select_subject_main():
         if st.button("Manual selection", use_container_width=True, type="primary"):
             st.session_state["cram_mode"] = True
             st.session_state["prioritization_mode"] = False
-            go("cram_subjects"); st.stop()
+            go("cram_subjects")
     with c2:
         if st.button("AI selection (enter weaknesses)", use_container_width=True):
-            go("ai_select"); st.stop()
+            go("ai_select")
 
 # ---- Manual selection (CRAM) ----
 def page_cram_subjects():
-    topbar("Choose Subject", back_to=("srs_menu" if st.session_state["cram_mode"] else "select_subject_main"))
-    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
-    st.session_state["focus_subject"] = None
-    st.session_state["focus_module"] = None
-    st.session_state["focus_iq"] = None
-    subject_cards(SUBJECTS, key_prefix="cram")
-
+    subject_cards(SUBJECTS, key_prefix="cram",
+                  back_to=("srs_menu" if st.session_state["cram_mode"] else "select_subject_main"))
     mid = st.columns([1,1,1])[1]
     with mid:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go("cram_review"); st.stop()
+            go("cram_review")
 
 def page_cram_modules():
     s = st.session_state.get("focus_subject")
-    if not s:
-        go("cram_subjects"); st.stop()
-    module_cards(s, MODS.get(s, []), key_prefix="cram", back_to="cram_subjects")
+    if not s: go("cram_subjects")
+    module_cards(s, key_prefix="cram", back_to="cram_subjects")
 
 def page_cram_iqs():
     sm = st.session_state.get("focus_module")
-    if not sm:
-        go("cram_modules"); st.stop()
+    if not sm: go("cram_modules")
     s, m = sm
-    iq_cards(s, m, IQS.get((s, m), []), key_prefix="cram", back_to="cram_modules")
+    iq_cards(s, m, key_prefix="cram", back_to="cram_modules")
 
 def page_cram_dotpoints():
     smi = st.session_state.get("focus_iq")
-    if not smi:
-        go("cram_iqs"); st.stop()
+    if not smi: go("cram_iqs")
     s, m, iq = smi
     dotpoint_cards(s, m, iq, key_prefix="cram", back_to="cram_iqs")
 
@@ -403,39 +401,30 @@ def page_cram_how():
     with mid:
         if st.button("Proceed", type="primary", use_container_width=True):
             st.session_state["prioritization_mode"] = mode.startswith("Prioritization")
-            go("home"); st.stop()
+            go("home")
 
 # ---- SRS choose subject (same UI, different back) ----
 def page_srs_subjects():
-    topbar("Choose Subject (SR)", back_to="srs_menu")
-    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
-    st.session_state["focus_subject"] = None
-    st.session_state["focus_module"] = None
-    st.session_state["focus_iq"] = None
-    subject_cards(SUBJECTS, key_prefix="srs")
-
+    subject_cards(SUBJECTS, key_prefix="srs", back_to="srs_menu")
     mid = st.columns([1,1,1])[1]
     with mid:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go("srs_review"); st.stop()
+            go("srs_review")
 
 def page_srs_modules():
     s = st.session_state.get("focus_subject")
-    if not s:
-        go("srs_subjects"); st.stop()
-    module_cards(s, MODS.get(s, []), key_prefix="srs", back_to="srs_subjects")
+    if not s: go("srs_subjects")
+    module_cards(s, key_prefix="srs", back_to="srs_subjects")
 
 def page_srs_iqs():
     sm = st.session_state.get("focus_module")
-    if not sm:
-        go("srs_modules"); st.stop()
+    if not sm: go("srs_modules")
     s, m = sm
-    iq_cards(s, m, IQS.get((s, m), []), key_prefix="srs", back_to="srs_modules")
+    iq_cards(s, m, key_prefix="srs", back_to="srs_modules")
 
 def page_srs_dotpoints():
     smi = st.session_state.get("focus_iq")
-    if not smi:
-        go("srs_iqs"); st.stop()
+    if not smi: go("srs_iqs")
     s, m, iq = smi
     dotpoint_cards(s, m, iq, key_prefix="srs", back_to="srs_iqs")
 
@@ -444,11 +433,11 @@ def page_srs_review():
     review_box("Review Selection (SR)", rows, "Apply changes", "Submit & Continue",
                back_to="srs_subjects", after_submit_route="srs_menu")
 
-# ---- AI selection (optional placeholder) ----
+# ---- AI selection (placeholder) ----
 def page_ai_select():
     topbar("AI selection — enter weaknesses", back_to="select_subject_main")
     st.write("Type what you struggle with; we’ll propose dotpoints that match (placeholder suggestions for now).")
-    wk = st.text_area("Weaknesses", key="ai_wk2", height=150,
+    st.session_state["ai_weakness_text"] = st.text_area("Weaknesses", key="ai_wk2", height=150,
                       placeholder="e.g., equilibrium constants; vectors; cell transport")
     if st.button("Get suggestions", type="primary"):
         suggestions = []
@@ -459,7 +448,7 @@ def page_ai_select():
                         suggestions.append((s, m, iq, dp))
         st.session_state["ai_suggested"] = suggestions[:30]
         st.session_state["ai_chosen"] = set()
-        go("ai_review"); st.stop()
+        go("ai_review")
 
 def page_ai_review():
     topbar("Review suggested dotpoints", back_to="ai_select")
@@ -498,7 +487,7 @@ def page_ai_review():
         if st.button("← Back to Choose Subject"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            go("cram_subjects"); st.stop()
+            go("cram_subjects")
     with mid:
         if st.button("Apply selection", type="primary"):
             st.session_state["ai_suggested"] = temp
@@ -510,18 +499,22 @@ def page_ai_review():
         if st.button("Done"):
             st.session_state["ai_suggested"] = temp
             st.session_state["ai_chosen"] = chosen
-            go("home"); st.stop()
+            go("home")
     st.markdown('</div>', unsafe_allow_html=True)  # foot
     st.markdown('</div>', unsafe_allow_html=True)  # wrap
 
 # ---------- Router ----------
 ROUTES = {
     "home": page_home,
+
     "srs_menu": page_srs_menu,
+    "srs_subjects": page_srs_subjects,
+    "srs_modules": page_srs_modules,
+    "srs_iqs": page_srs_iqs,
+    "srs_dotpoints": page_srs_dotpoints,
+    "srs_review": page_srs_review,
 
     "select_subject_main": page_select_subject_main,
-
-    # CRAM
     "cram_subjects": page_cram_subjects,
     "cram_modules": page_cram_modules,
     "cram_iqs": page_cram_iqs,
@@ -529,15 +522,8 @@ ROUTES = {
     "cram_review": page_cram_review,
     "cram_how": page_cram_how,
 
-    # SRS choose flow
-    "srs_subjects": page_srs_subjects,
-    "srs_modules": page_srs_modules,
-    "srs_iqs": page_srs_iqs,
-    "srs_dotpoints": page_srs_dotpoints,
-    "srs_review": page_srs_review,
-
-    # AI select
     "ai_select": page_ai_select,
     "ai_review": page_ai_review,
 }
+
 ROUTES.get(st.session_state["route"], page_home)()
