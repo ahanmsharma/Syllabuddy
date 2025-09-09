@@ -2,7 +2,7 @@ import streamlit as st
 
 from data.data import load_syllabus, explode_syllabus, ensure_core_state
 from common.style import inject_css
-from common.ui import set_go
+from common.ui import set_go, safe_rerun  # do not remove / rename
 
 # Pages
 from homepage.homepage import page_home, page_select_subject_main
@@ -21,33 +21,24 @@ from review.review import page_srs_review, page_cram_review
 st.set_page_config(page_title="Syllabuddy", layout="wide")
 inject_css()
 
-# ---------- version-safe rerun + router ----------
-def safe_rerun():
-    # Streamlit >= 1.30
-    if hasattr(st, "rerun"):
-        st.rerun()
-        return
-    # Older Streamlit
-    if hasattr(st, "experimental_rerun"):
-        st.experimental_rerun()  # type: ignore[attr-defined]
-        return
-    # Last-resort: flip a dummy state key to trigger a rerun
-    st.session_state["_force_rerun_tick"] = st.session_state.get("_force_rerun_tick", 0) + 1
-
+# ---------- router setter that works across Streamlit versions ----------
 def go(route: str):
     st.session_state["route"] = route
     safe_rerun()
+
+# register go() for submodules
+set_go(go)
 
 # ---------- data & shared state ----------
 SYL = load_syllabus()
 SUBJECTS, MODS, IQS, DPS = explode_syllabus(SYL)
 ensure_core_state()
 
-# share to modules
+# share to modules via session_state
 st.session_state["_SUBJECTS"] = SUBJECTS
-st.session_state["_MODS"]     = MODS
-st.session_state["_IQS"]      = IQS
-st.session_state["_DPS"]      = DPS
+st.session_state["_MODS"] = MODS
+st.session_state["_IQS"] = IQS
+st.session_state["_DPS"] = DPS
 
 # ---------- router map ----------
 ROUTES = {
@@ -62,7 +53,7 @@ ROUTES = {
     "srs_dotpoints": page_srs_dotpoints,
     "srs_review": page_srs_review,
 
-    # CRAM
+    # Cram
     "cram_subjects": page_cram_subjects,
     "cram_modules": page_cram_modules,
     "cram_iqs": page_cram_iqs,
@@ -75,7 +66,9 @@ ROUTES = {
     "ai_review": page_ai_review,
 }
 
+# default route
 if "route" not in st.session_state:
     st.session_state["route"] = "home"
 
+# dispatch
 ROUTES.get(st.session_state["route"], page_home)()
