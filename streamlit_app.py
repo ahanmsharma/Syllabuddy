@@ -282,51 +282,69 @@ def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to:
         if st.button("Review selected dotpoints", type="primary", use_container_width=True):
             go("cram_review" if key_prefix == "cram" else "srs_review")
           
-def review_box(title: str, rows: List[tuple], apply_label: str,
-               submit_label: str, back_to: str, after_submit_route: str):
+def review_box(route_key: str, title: str, rows: List[tuple],
+               apply_label: str, submit_label: str,
+               back_to: str, after_submit_route: str):
     """
-    Review list page:
-      - Each item shows in a bordered line.
-      - Buttons 'Keep' / 'Remove' toggle instantly.
-      - Color border: green = kept, red = removed.
-      - Simple scrolling (no sticky header/foot).
+    Simple, reliable review list:
+      - Each item shows in a slim bordered row (green=Kept, red=Removed).
+      - Two buttons per row: Keep / Remove (unique keys per route).
+      - Normal page scroll (no sticky wrappers).
+      - Back / Apply / Submit at the bottom.
+    route_key: pass a short unique prefix per page (e.g., "cram" or "srs") to avoid key collisions.
     """
     topbar(title, back_to=back_to)
 
-    # Start with the current selection as kept
-    temp = set(rows)
+    # Start with current selection as Kept
+    current = set(rows)
 
     st.write(f"**Total: {len(rows)} items**")
     for idx, item in enumerate(rows):
         s, m, iq, dp = item
-        kept = item in temp
-        border_color = "#16a34a" if kept else "#b91c1c"
+        kept = item in current
+        border = "#16a34a" if kept else "#b91c1c"
         label = "Kept" if kept else "Removed"
 
-        # row box
+        # Row (no widget inside custom div except buttons below)
         st.markdown(
             f"""
-            <div style="border:2px solid {border_color};
+            <div style="border:2px solid {border};
                         border-radius:10px;
                         padding:8px 12px;
                         margin-bottom:10px;">
               <b>{s} → {m} → {iq}</b> — {dp}<br>
-              <span style="color:{border_color}; font-weight:600;">{label}</span>
+              <span style="color:{border}; font-weight:700;">{label}</span>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        colA, colB = st.columns([1,1])
-        with colA:
-            if st.button("Keep", key=f"rev_keep_{idx}"):
-                temp.add(item)
+        left, right = st.columns(2)
+        with left:
+            if st.button("Keep", key=f"{route_key}_keepbtn_{idx}"):
+                if item not in current:
+                    current.add(item)
                 st.rerun()
-        with colB:
-            if st.button("Remove", key=f"rev_remove_{idx}"):
-                if item in temp:
-                    temp.remove(item)
+        with right:
+            if st.button("Remove", key=f"{route_key}_removebtn_{idx}"):
+                if item in current:
+                    current.discard(item)
                 st.rerun()
+
+    # Footer actions (always visible)
+    st.divider()
+    c1, c2, c3 = st.columns([1,1,1])
+    with c1:
+        if st.button("← Back", key=f"{route_key}_back"):
+            go(back_to)
+    with c2:
+        if st.button(apply_label, key=f"{route_key}_apply", type="primary"):
+            st.session_state["sel_dotpoints"] = set(current)
+            st.success("Selection updated.")
+    with c3:
+        if st.button(submit_label, key=f"{route_key}_submit", type="primary"):
+            st.session_state["sel_dotpoints"] = set(current)
+            go(after_submit_route)
 
     # footer actions
     st.divider()
@@ -485,8 +503,15 @@ def page_cram_dotpoints():
 
 def page_cram_review():
     rows = sorted(list(st.session_state["sel_dotpoints"]))
-    review_box("Review Selection (Cram)", rows, "Apply changes", "Submit & Continue",
-               back_to="cram_subjects", after_submit_route="cram_how")
+    review_box(
+        route_key="cram",
+        title="Review Selection (Cram)",
+        rows=rows,
+        apply_label="Apply changes",
+        submit_label="Submit & Continue",
+        back_to="cram_subjects",
+        after_submit_route="cram_how",
+    )
 
 def page_cram_how():
     topbar("How to review", back_to="cram_review")
@@ -531,8 +556,15 @@ def page_srs_dotpoints():
 
 def page_srs_review():
     rows = sorted(list(st.session_state["sel_dotpoints"]))
-    review_box("Review Selection (SR)", rows, "Apply changes", "Submit & Continue",
-               back_to="srs_subjects", after_submit_route="srs_menu")
+    review_box(
+        route_key="srs",
+        title="Review Selection (SR)",
+        rows=rows,
+        apply_label="Apply changes",
+        submit_label="Submit & Continue",
+        back_to="srs_subjects",
+        after_submit_route="srs_menu",
+    )
 
 # ---- AI selection (placeholder) ----
 def page_ai_select():
