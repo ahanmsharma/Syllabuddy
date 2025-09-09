@@ -24,21 +24,7 @@ def inject_css():
   .card-title { font-weight:800; margin-bottom:.35rem; color:#111; }
   .card-sub { color:#4b5563; font-size:.95rem; margin-bottom:.5rem; }
 
-  /* Review box: only middle scrolls */
-  .scroll-wrap {
-    display:flex; flex-direction:column; height:72vh;
-    border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; background:#fff;
-  }
-  .scroll-head {
-    padding:12px 14px; font-weight:900; background:#f8fafc; border-bottom:1px solid #e5e7eb;
-    position: sticky; top: 0; z-index: 2;
-  }
-  .scroll-body { flex:1; overflow:auto; padding:12px 14px; }
-  .scroll-foot {
-    padding:12px 14px; background:#f8fafc; border-top:1px solid #e5e7eb;
-    position: sticky; bottom: 0; z-index: 2;
-  }
-
+  /* Generic dp-item used in AI review page */
   .dp-item {
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:10px; background:#fff;
