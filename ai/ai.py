@@ -11,7 +11,6 @@ def _rerun():
     if callable(r):
         r()
 
-# Theme-aware card CSS matches review pages
 AI_CSS = """
 <style>
 :root{
@@ -45,6 +44,11 @@ AI_CSS = """
 </style>
 """
 
+def _card_class_and_pill(is_removed: bool):
+    if is_removed:
+        return ("dp-card red", '<span class="pill remove">Removed</span>', "🔁 Mark Kept")
+    return ("dp-card green", '<span class="pill keep">Kept</span>', "🔁 Mark Removed")
+
 def page_ai_select():
     SUBJECTS = st.session_state["_SUBJECTS"]
     MODS     = st.session_state["_MODS"]
@@ -65,15 +69,13 @@ def page_ai_select():
                     for dp in DPS.get((s, m, iq), []):
                         suggestions.append((s, m, iq, dp))
         st.session_state["ai_suggested"] = suggestions[:40]
-
-        # Use status dict; default is Kept (green) unless explicitly removed
-        st.session_state["ai_removed"] = []  # list of keys that user removed
+        st.session_state["ai_removed"] = []  # list of keys explicitly removed
         go("ai_review")
 
 def page_ai_review():
     topbar("Review suggested dotpoints", back_to="ai_select")
     st.markdown(AI_CSS, unsafe_allow_html=True)
-    st.write("Click ✅ Keep (green) or ❌ Remove (red). Tally updates live. Use 'Apply selection' to add kept items.")
+    st.write("Toggle items to Kept (green) or Removed (red). Tally updates live. Apply to add kept items.")
 
     suggested = st.session_state.get("ai_suggested", [])
     removed_keys: list = st.session_state.get("ai_removed", [])
@@ -88,8 +90,7 @@ def page_ai_review():
     for idx, item in enumerate(suggested):
         k = _key_for(item)
         is_removed = (k in removed)
-        card_class = "dp-card red" if is_removed else "dp-card green"
-        pill_html  = '<span class="pill remove">Removed</span>' if is_removed else '<span class="pill keep">Kept</span>'
+        card_class, pill_html, toggle_label = _card_class_and_pill(is_removed)
 
         if is_removed: removed_count += 1
         else: kept_count += 1
@@ -104,19 +105,13 @@ def page_ai_review():
 
             st.markdown(f'<div class="dp-text">{dp}</div>', unsafe_allow_html=True)
 
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("✅ Keep", key=f"{KP}_keep_{idx}", use_container_width=True):
-                    if k in removed:
-                        removed.remove(k)
-                        st.session_state["ai_removed"] = list(removed)
-                        _rerun()
-            with c2:
-                if st.button("❌ Remove", key=f"{KP}_remove_{idx}", use_container_width=True):
-                    if k not in removed:
-                        removed.add(k)
-                        st.session_state["ai_removed"] = list(removed)
-                        _rerun()
+            if st.button(toggle_label, key=f"{KP}_toggle_{idx}", use_container_width=True):
+                if is_removed:
+                    removed.discard(k)
+                else:
+                    removed.add(k)
+                st.session_state["ai_removed"] = list(removed)
+                _rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)  # end card
 
