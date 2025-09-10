@@ -1,6 +1,6 @@
 from typing import List, Tuple
 import streamlit as st
-from common.ui import topbar, go, stable_key_tuple
+from common.ui import topbar, get_go, stable_key_tuple
 
 AI_CSS = """
 <style>
@@ -49,6 +49,7 @@ def _class(is_removed: bool) -> str:
     return "dp-card red" if is_removed else "dp-card green"
 
 def page_ai_select():
+    go = get_go()
     SUBJECTS = st.session_state["_SUBJECTS"]
     MODS     = st.session_state["_MODS"]
     IQS      = st.session_state["_IQS"]
@@ -74,6 +75,7 @@ def page_ai_select():
         go("ai_review")
 
 def page_ai_review():
+    go = get_go()
     topbar("Review suggested dotpoints", back_to="ai_select")
     st.markdown(AI_CSS, unsafe_allow_html=True)
     st.write("Toggle each card to Kept (green) or Removed (red). Tally updates live. Apply to add kept items.")
