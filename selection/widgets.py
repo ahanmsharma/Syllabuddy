@@ -1,46 +1,63 @@
 import streamlit as st
-from typing import List
-from common.ui import topbar, safe_rerun
+from common.ui import (
+    topbar, go,
+    k_subject_open, k_subject_toggle,
+    k_module_open,  k_module_toggle,
+    k_iq_open,      k_iq_toggle,
+    k_dp_toggle,
+)
 
-def _data():
-    return (
-        st.session_state["_SUBJECTS"],
-        st.session_state["_MODS"],
-        st.session_state["_IQS"],
-        st.session_state["_DPS"],
-        st.session_state["_go"],
-    )
+# =============================
+# Helpers to add/remove in bulk
+# =============================
 
-# ---- selection helpers ----
-def is_subject_selected(subject: str) -> bool:
-    return any(s == subject for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
-
-def is_module_selected(subject: str, module: str) -> bool:
-    return any((s == subject and m == module) for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
-
-def is_iq_selected(subject: str, module: str, iq: str) -> bool:
-    return any((s == subject and m == module and i == iq) for (s, m, i, dp) in st.session_state["sel_dotpoints"])
-
-def add_all_modules(subject: str, on: bool, MODS, IQS, DPS):
+def add_all_modules(subject: str, on: bool):
+    MODS = st.session_state["_MODS"]
+    IQS  = st.session_state["_IQS"]
+    DPS  = st.session_state["_DPS"]
+    sel  = st.session_state["sel_dotpoints"]
     for m in MODS.get(subject, []):
-        add_all_iqs(subject, m, on, IQS, DPS)
+        for iq in IQS.get((subject, m), []):
+            for dp in DPS.get((subject, m, iq), []):
+                item = (subject, m, iq, dp)
+                if on: sel.add(item)
+                else:  sel.discard(item)
 
-def add_all_iqs(subject: str, module: str, on: bool, IQS, DPS):
+def add_all_iqs(subject: str, module: str, on: bool):
+    IQS  = st.session_state["_IQS"]
+    DPS  = st.session_state["_DPS"]
+    sel  = st.session_state["sel_dotpoints"]
     for iq in IQS.get((subject, module), []):
-        add_all_dps(subject, module, iq, on, DPS)
+        for dp in DPS.get((subject, module, iq), []):
+            item = (subject, module, iq, dp)
+            if on: sel.add(item)
+            else:  sel.discard(item)
 
-def add_all_dps(subject: str, module: str, iq: str, on: bool, DPS):
+def add_all_dps(subject: str, module: str, iq: str, on: bool):
+    DPS = st.session_state["_DPS"]
+    sel = st.session_state["sel_dotpoints"]
     for dp in DPS.get((subject, module, iq), []):
         item = (subject, module, iq, dp)
-        if on:  st.session_state["sel_dotpoints"].add(item)
-        else:   st.session_state["sel_dotpoints"].discard(item)
+        if on: sel.add(item)
+        else:  sel.discard(item)
 
-# ---- cards ----
-def subject_cards(key_prefix: str, back_to: str | None):
-    SUBJECTS, MODS, IQS, DPS, go = _data()
-    if back_to: topbar("Choose Subject", back_to=back_to)
-    else: st.title("Choose Subject")
-    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
+def is_subject_selected(subject: str) -> bool:
+    return any(s==subject for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
+
+def is_module_selected(subject: str, module: str) -> bool:
+    return any((s==subject and m==module) for (s, m, iq, dp) in st.session_state["sel_dotpoints"])
+
+def is_iq_selected(subject: str, module: str, iq: str) -> bool:
+    return any((s==subject and m==module and i==iq) for (s, m, i, dp) in st.session_state["sel_dotpoints"])
+
+# =============================
+# CRAM pages
+# =============================
+
+def page_cram_subjects():
+    SUBJECTS = st.session_state["_SUBJECTS"]
+    topbar("Choose Subject", back_to="srs_menu")
+    st.caption("Open drills down. “Select” toggles all children (modules → IQs → dotpoints).")
 
     cols = st.columns(2)
     for i, s in enumerate(SUBJECTS):
@@ -50,88 +67,302 @@ def subject_cards(key_prefix: str, back_to: str | None):
             with box:
                 if selected:
                     st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
-                st.markdown(f"### {s}")
-                st.caption(f"{len(MODS.get(s, []))} modules")
-                a, b = st.columns([3,2])
-                with a:
-                    if st.button("Open", key=f"{key_prefix}_open_{i}", use_container_width=True):
-                        st.session_state["focus_subject"] = s
-                        go(f"{key_prefix}_modules")
-                with b:
-                    if st.button(("Unselect" if selected else "Select"),
-                                 key=f"{key_prefix}_sel_{i}", use_container_width=True):
-                        add_all_modules(s, on=not selected, MODS=MODS, IQS=IQS, DPS=DPS)
-                        safe_rerun()
+                st.subheader(s)
+                c1, c2 = st.columns([2,1])
 
-def module_cards(subject: str, key_prefix: str, back_to: str):
-    SUBJECTS, MODS, IQS, DPS, go = _data()
-    topbar(f"{subject} — Modules", back_to=back_to)
-    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
-    modules = MODS.get(subject, [])
+                # Open
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_subject_open(s, "cram"),
+                        on_click=lambda subj=s: st.session_state.update({"focus_subject": subj}) or go("cram_modules"),
+                        use_container_width=True
+                    )
+
+                # Select/Unselect whole subject
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_subject_toggle(s, "cram"),
+                        on_click=lambda subj=s, sel=selected: (add_all_modules(subj, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
+
+def page_cram_modules():
+    MODS = st.session_state["_MODS"]
+    s = st.session_state.get("focus_subject")
+    if not s:
+        return go("cram_subjects")
+
+    topbar(f"{s} — Modules", back_to="cram_subjects")
+    modules = MODS.get(s, [])
     cols = st.columns(2)
+
     for i, m in enumerate(modules):
         with cols[i % 2]:
-            selected = is_module_selected(subject, m)
+            selected = is_module_selected(s, m)
             box = st.container(border=True)
             with box:
                 if selected:
                     st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
-                st.markdown(f"### {m}")
-                st.caption(f"{len(IQS.get((subject, m), []))} inquiry questions")
-                a, b = st.columns([3,2])
-                with a:
-                    if st.button("Open", key=f"{key_prefix}_mod_open_{i}", use_container_width=True):
-                        st.session_state["focus_module"] = (subject, m)
-                        go(f"{key_prefix}_iqs")
-                with b:
-                    if st.button(("Unselect" if selected else "Select"),
-                                 key=f"{key_prefix}_mod_sel_{i}", use_container_width=True):
-                        add_all_iqs(subject, m, on=not selected, IQS=IQS, DPS=DPS)
-                        safe_rerun()
+                st.subheader(m)
+                c1, c2 = st.columns([2,1])
 
-def iq_cards(subject: str, module: str, key_prefix: str, back_to: str):
-    SUBJECTS, MODS, IQS, DPS, go = _data()
-    topbar(f"{subject} → {module} — IQs", back_to=back_to)
-    st.caption("Open drills down. Use Select/Unselect to include/exclude.")
-    iqs = IQS.get((subject, module), [])
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_module_open(s, m, "cram"),
+                        on_click=lambda subj=s, mod=m: st.session_state.update({"focus_module": (subj, mod)}) or go("cram_iqs"),
+                        use_container_width=True
+                    )
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_module_toggle(s, m, "cram"),
+                        on_click=lambda subj=s, mod=m, sel=selected: (add_all_iqs(subj, mod, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
+
+def page_cram_iqs():
+    IQS = st.session_state["_IQS"]
+    sm = st.session_state.get("focus_module")
+    if not sm:
+        return go("cram_modules")
+    s, m = sm
+
+    topbar(f"{s} → {m} — IQs", back_to="cram_modules")
+    iqs = IQS.get((s, m), [])
     cols = st.columns(2)
+
     for i, iq in enumerate(iqs):
         with cols[i % 2]:
-            selected = is_iq_selected(subject, module, iq)
+            selected = is_iq_selected(s, m, iq)
             box = st.container(border=True)
             with box:
                 if selected:
                     st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
-                st.markdown(f"### {iq}")
-                st.caption(f"{len(DPS.get((subject, module, iq), []))} dotpoints")
-                a, b = st.columns([3,2])
-                with a:
-                    if st.button("Open", key=f"{key_prefix}_iq_open_{i}", use_container_width=True):
-                        st.session_state["focus_iq"] = (subject, module, iq)
-                        go(f"{key_prefix}_dotpoints")
-                with b:
-                    if st.button(("Unselect" if selected else "Select"),
-                                 key=f"{key_prefix}_iq_sel_{i}", use_container_width=True):
-                        add_all_dps(subject, module, iq, on=not selected, DPS=DPS)
-                        safe_rerun()
+                st.subheader(iq)
+                c1, c2 = st.columns([2,1])
 
-def dotpoint_cards(subject: str, module: str, iq: str, key_prefix: str, back_to: str):
-    SUBJECTS, MODS, IQS, DPS, go = _data()
-    topbar(f"{subject} → {module} → {iq} — Dotpoints", back_to=back_to)
-    st.caption("Click Toggle to include/exclude dotpoints.")
-    dps = DPS.get((subject, module, iq), [])
-    colA, colB = st.columns(2)
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_iq_open(s, m, iq, "cram"),
+                        on_click=lambda subj=s, mod=m, q=iq: st.session_state.update({"focus_iq": (subj, mod, q)}) or go("cram_dotpoints"),
+                        use_container_width=True
+                    )
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_iq_toggle(s, m, iq, "cram"),
+                        on_click=lambda subj=s, mod=m, q=iq, sel=selected: (add_all_dps(subj, mod, q, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
+
+def page_cram_dotpoints():
+    DPS = st.session_state["_DPS"]
+    smi = st.session_state.get("focus_iq")
+    if not smi:
+        return go("cram_iqs")
+    s, m, iq = smi
+
+    topbar(f"{s} → {m} → {iq} — Dotpoints", back_to="cram_iqs")
+    dps = DPS.get((s, m, iq), [])
+    c1, c2 = st.columns(2)
+
     for i, dp in enumerate(dps):
-        item = (subject, module, iq, dp)
-        selected = item in st.session_state["sel_dotpoints"]
-        with (colA if i % 2 == 0 else colB):
+        with (c1 if i % 2 == 0 else c2):
+            item = (s, m, iq, dp)
+            selected = item in st.session_state["sel_dotpoints"]
+
             box = st.container(border=True)
             with box:
                 if selected:
                     st.markdown("<div style='height:6px;background:#16a34a;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
-                st.markdown(f"**{dp}**")
-                if st.button(("Unselect" if selected else "Select / Toggle"),
-                             key=f"{key_prefix}_dp_toggle_{i}", use_container_width=True):
-                    if selected: st.session_state["sel_dotpoints"].discard(item)
-                    else:        st.session_state["sel_dotpoints"].add(item)
-                    safe_rerun()
+                st.write(f"**{dp}**")
+                label = "Unselect" if selected else "Select / Toggle"
+                st.button(
+                    label,
+                    key=k_dp_toggle(s, m, iq, dp, "cram"),
+                    on_click=lambda it=item, sel=selected: (
+                        st.session_state["sel_dotpoints"].discard(it) if sel
+                        else st.session_state["sel_dotpoints"].add(it)
+                    ),
+                    use_container_width=True
+                )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
+
+# =============================
+# SRS pages (same UI, different backs)
+# =============================
+
+def page_srs_subjects():
+    SUBJECTS = st.session_state["_SUBJECTS"]
+    topbar("Choose Subject", back_to="srs_menu")
+    st.caption("Open drills down. “Select” toggles all children (modules → IQs → dotpoints).")
+
+    cols = st.columns(2)
+    for i, s in enumerate(SUBJECTS):
+        with cols[i % 2]:
+            selected = is_subject_selected(s)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.subheader(s)
+                c1, c2 = st.columns([2,1])
+
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_subject_open(s, "srs"),
+                        on_click=lambda subj=s: st.session_state.update({"focus_subject": subj}) or go("srs_modules"),
+                        use_container_width=True
+                    )
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_subject_toggle(s, "srs"),
+                        on_click=lambda subj=s, sel=selected: (add_all_modules(subj, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
+
+def page_srs_modules():
+    MODS = st.session_state["_MODS"]
+    s = st.session_state.get("focus_subject")
+    if not s:
+        return go("srs_subjects")
+
+    topbar(f"{s} — Modules", back_to="srs_subjects")
+    modules = MODS.get(s, [])
+    cols = st.columns(2)
+
+    for i, m in enumerate(modules):
+        with cols[i % 2]:
+            selected = is_module_selected(s, m)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.subheader(m)
+                c1, c2 = st.columns([2,1])
+
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_module_open(s, m, "srs"),
+                        on_click=lambda subj=s, mod=m: st.session_state.update({"focus_module": (subj, mod)}) or go("srs_iqs"),
+                        use_container_width=True
+                    )
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_module_toggle(s, m, "srs"),
+                        on_click=lambda subj=s, mod=m, sel=selected: (add_all_iqs(subj, mod, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
+
+def page_srs_iqs():
+    IQS = st.session_state["_IQS"]
+    sm = st.session_state.get("focus_module")
+    if not sm:
+        return go("srs_modules")
+    s, m = sm
+
+    topbar(f"{s} → {m} — IQs", back_to="srs_modules")
+    iqs = IQS.get((s, m), [])
+    cols = st.columns(2)
+
+    for i, iq in enumerate(iqs):
+        with cols[i % 2]:
+            selected = is_iq_selected(s, m, iq)
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#3b82f6;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.subheader(iq)
+                c1, c2 = st.columns([2,1])
+
+                with c1:
+                    st.button(
+                        "Open",
+                        key=k_iq_open(s, m, iq, "srs"),
+                        on_click=lambda subj=s, mod=m, q=iq: st.session_state.update({"focus_iq": (subj, mod, q)}) or go("srs_dotpoints"),
+                        use_container_width=True
+                    )
+                with c2:
+                    label = "Unselect" if selected else "Select"
+                    st.button(
+                        label,
+                        key=k_iq_toggle(s, m, iq, "srs"),
+                        on_click=lambda subj=s, mod=m, q=iq, sel=selected: (add_all_dps(subj, mod, q, not sel),),
+                        use_container_width=True
+                    )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
+
+def page_srs_dotpoints():
+    DPS = st.session_state["_DPS"]
+    smi = st.session_state.get("focus_iq")
+    if not smi:
+        return go("srs_iqs")
+    s, m, iq = smi
+
+    topbar(f"{s} → {m} → {iq} — Dotpoints", back_to="srs_iqs")
+    dps = DPS.get((s, m, iq), [])
+    c1, c2 = st.columns(2)
+
+    for i, dp in enumerate(dps):
+        with (c1 if i % 2 == 0 else c2):
+            item = (s, m, iq, dp)
+            selected = item in st.session_state["sel_dotpoints"]
+
+            box = st.container(border=True)
+            with box:
+                if selected:
+                    st.markdown("<div style='height:6px;background:#16a34a;border-radius:6px;margin:-8px -8px 8px -8px;'></div>", unsafe_allow_html=True)
+                st.write(f"**{dp}**")
+                label = "Unselect" if selected else "Select / Toggle"
+                st.button(
+                    label,
+                    key=k_dp_toggle(s, m, iq, dp, "srs"),
+                    on_click=lambda it=item, sel=selected: (
+                        st.session_state["sel_dotpoints"].discard(it) if sel
+                        else st.session_state["sel_dotpoints"].add(it)
+                    ),
+                    use_container_width=True
+                )
+
+    mid = st.columns([1,1,1])[1]
+    with mid:
+        st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
