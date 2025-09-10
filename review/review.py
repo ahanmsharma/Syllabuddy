@@ -1,6 +1,6 @@
 from typing import List, Tuple
 import streamlit as st
-from common.ui import topbar, go, stable_key_tuple
+from common.ui import topbar, get_go, stable_key_tuple
 
 # Removed set stored deterministically (no random keys)
 def _get_removed(route_key: str) -> set[str]:
@@ -100,6 +100,7 @@ def review_box(
     back_to: str,
     after_submit_route: str,
 ):
+    go = get_go()
     topbar(title, back_to=back_to)
     st.markdown(REVIEW_CSS, unsafe_allow_html=True)
 
