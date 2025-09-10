@@ -1,46 +1,67 @@
 import streamlit as st
 
-# ---------- Router & rerun (stable) ----------
+# ------------------------------
+# Central rerun + navigation
+# ------------------------------
+
 def safe_rerun():
-    r = getattr(st, "rerun", None)
-    if callable(r):
-        r()
+    """
+    Wrapper around st.rerun for compatibility with older/newer Streamlit versions.
+    """
+    if hasattr(st, "rerun"):
+        st.rerun()
+    elif hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+    else:
+        raise RuntimeError("No rerun method available in this Streamlit version.")
 
-def go(route: str):
-    st.session_state["route"] = route
-    safe_rerun()
+def set_go():
+    """
+    Inject a 'go' function into session_state for navigation.
+    Usage: st.session_state['_go']("route_name")
+    """
+    def go(route: str):
+        st.session_state["route"] = route
+        safe_rerun()
 
-# ---------- One-time app state init ----------
-def ensure_app_state():
-    ss = st.session_state
-    ss.setdefault("route", "home")
+    # Put it in session_state for global access
+    st.session_state["_go"] = go
+    return go
 
-    # data holders that other pages expect (you already populate these elsewhere)
-    ss.setdefault("_SUBJECTS", [])
-    ss.setdefault("_MODS", {})     # subject -> [modules]
-    ss.setdefault("_IQS", {})      # (subject,module) -> [iqs]
-    ss.setdefault("_DPS", {})      # (subject,module,iq) -> [dotpoints]
+# ------------------------------
+# UI helpers
+# ------------------------------
 
-    # global selection of dotpoints {(s,m,iq,dp)}
-    ss.setdefault("sel_dotpoints", set())
-
-# ---------- Topbar ----------
-def topbar(title: str, back_to: str | None = None):
-    c1, c2 = st.columns([1,6])
+def topbar(title: str, back_to: str = None):
+    """
+    Simple top bar with optional back button.
+    """
+    c1, c2 = st.columns([1,6], vertical_alignment="center")
     with c1:
         if back_to:
-            st.button("← Back", key=f"back_{title}", on_click=go, args=(back_to,), use_container_width=True)
+            if st.button("⬅ Back", key=f"back_{title}"):
+                st.session_state["_go"](back_to)
     with c2:
         st.title(title)
 
-# ---------- Deterministic stable keys ----------
-def k_subject_open(s: str, prefix: str):   return f"{prefix}:open:subject:{s}"
-def k_subject_toggle(s: str, prefix: str): return f"{prefix}:toggle:subject:{s}"
-def k_module_open(s: str, m: str, prefix: str):   return f"{prefix}:open:module:{s}:{m}"
-def k_module_toggle(s: str, m: str, prefix: str): return f"{prefix}:toggle:module:{s}:{m}"
-def k_iq_open(s: str, m: str, iq: str, prefix: str):   return f"{prefix}:open:iq:{s}:{m}:{iq}"
-def k_iq_toggle(s: str, m: str, iq: str, prefix: str): return f"{prefix}:toggle:iq:{s}:{m}:{iq}"
-def k_dp_toggle(s: str, m: str, iq: str, dp: str, prefix: str): return f"{prefix}:toggle:dp:{s}:{m}:{iq}:{dp}"
-def stable_key_tuple(item: tuple[str,str,str,str]) -> str:
-    s,m,iq,dp = item
-    return f"{s}||{m}||{iq}||{dp}"
+# ---------- key helpers (stable keys for widgets) ----------
+def k_subject_open(subject: str, prefix: str) -> str:
+    return f"{prefix}_subject_open_{subject}"
+
+def k_subject_toggle(subject: str, prefix: str) -> str:
+    return f"{prefix}_subject_toggle_{subject}"
+
+def k_module_open(subject: str, module: str, prefix: str) -> str:
+    return f"{prefix}_module_open_{subject}_{module}"
+
+def k_module_toggle(subject: str, module: str, prefix: str) -> str:
+    return f"{prefix}_module_toggle_{subject}_{module}"
+
+def k_iq_open(subject: str, module: str, iq: str, prefix: str) -> str:
+    return f"{prefix}_iq_open_{subject}_{module}_{iq}"
+
+def k_iq_toggle(subject: str, module: str, iq: str, prefix: str) -> str:
+    return f"{prefix}_iq_toggle_{subject}_{module}_{iq}"
+
+def k_dp_toggle(subject: str, module: str, iq: str, dp: str, prefix: str) -> str:
+    return f"{prefix}_dp_toggle_{subject}_{module}_{iq}_{dp}"
