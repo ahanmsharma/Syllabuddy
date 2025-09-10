@@ -4,11 +4,13 @@ from data.data import load_syllabus, explode_syllabus, ensure_core_state
 from common.style import inject_css
 from common.ui import set_go, safe_rerun
 
-# Initialize navigation
-if "_go" not in st.session_state:
-    go = set_go()
-else:
-    go = st.session_state["_go"]
+# ---------- router setter that works across Streamlit versions ----------
+def go(route: str):
+    st.session_state["route"] = route
+    safe_rerun()
+
+# register go() for submodules
+set_go(go)
 
 # Pages
 from homepage.homepage import page_home, page_select_subject_main
@@ -26,14 +28,6 @@ from review.review import page_srs_review, page_cram_review
 # ---------- page config & CSS ----------
 st.set_page_config(page_title="Syllabuddy", layout="wide")
 inject_css()
-
-# ---------- router setter that works across Streamlit versions ----------
-def go(route: str):
-    st.session_state["route"] = route
-    safe_rerun()
-
-# register go() for submodules
-set_go(go)
 
 # ---------- data & shared state ----------
 SYL = load_syllabus()

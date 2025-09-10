@@ -1,6 +1,6 @@
 import streamlit as st
 from common.ui import (
-    topbar, go,
+    topbar, get_go,
     k_subject_open, k_subject_toggle,
     k_module_open,  k_module_toggle,
     k_iq_open,      k_iq_toggle,
@@ -55,6 +55,7 @@ def is_iq_selected(subject: str, module: str, iq: str) -> bool:
 # =============================
 
 def page_cram_subjects():
+    go = get_go()
     SUBJECTS = st.session_state["_SUBJECTS"]
     topbar("Choose Subject", back_to="srs_menu")
     st.caption("Open drills down. “Select” toggles all children (modules → IQs → dotpoints).")
@@ -94,6 +95,7 @@ def page_cram_subjects():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
 
 def page_cram_modules():
+    go = get_go()
     MODS = st.session_state["_MODS"]
     s = st.session_state.get("focus_subject")
     if not s:
@@ -134,6 +136,7 @@ def page_cram_modules():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
 
 def page_cram_iqs():
+    go = get_go()
     IQS = st.session_state["_IQS"]
     sm = st.session_state.get("focus_module")
     if not sm:
@@ -175,6 +178,7 @@ def page_cram_iqs():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("cram_review",))
 
 def page_cram_dotpoints():
+    go = get_go()
     DPS = st.session_state["_DPS"]
     smi = st.session_state.get("focus_iq")
     if not smi:
@@ -215,6 +219,7 @@ def page_cram_dotpoints():
 # =============================
 
 def page_srs_subjects():
+    go = get_go()
     SUBJECTS = st.session_state["_SUBJECTS"]
     topbar("Choose Subject", back_to="srs_menu")
     st.caption("Open drills down. “Select” toggles all children (modules → IQs → dotpoints).")
@@ -251,6 +256,7 @@ def page_srs_subjects():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
 
 def page_srs_modules():
+    go = get_go()
     MODS = st.session_state["_MODS"]
     s = st.session_state.get("focus_subject")
     if not s:
@@ -291,6 +297,7 @@ def page_srs_modules():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
 
 def page_srs_iqs():
+    go = get_go()
     IQS = st.session_state["_IQS"]
     sm = st.session_state.get("focus_module")
     if not sm:
@@ -332,6 +339,7 @@ def page_srs_iqs():
         st.button("Review selected dotpoints", type="primary", use_container_width=True, on_click=go, args=("srs_review",))
 
 def page_srs_dotpoints():
+    go = get_go()
     DPS = st.session_state["_DPS"]
     smi = st.session_state.get("focus_iq")
     if not smi:
