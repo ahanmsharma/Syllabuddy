@@ -75,11 +75,5 @@ def k_dp_toggle(subject: str, module: str, iq: str, dp: str, prefix: str) -> str
     return f"{prefix}_dp_toggle_{subject}_{module}_{iq}_{dp}"
 
 def stable_key_tuple(item: tuple[str, ...]) -> str:
-    """Create a stable string key from a tuple of strings.
-
-    The previous implementation simply joined the parts with ``|`` which could
-    lead to collisions if any item itself contained that character.  We now
-    prefix each part with its length to ensure a reversible, collision‑free
-    representation suitable for use as a Streamlit widget key.
-    """
+    """Create a collision‑free widget key from a tuple of strings."""
     return "|".join(f"{len(part)}:{part}" for part in item)
