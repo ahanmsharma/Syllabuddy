@@ -2,7 +2,13 @@ import streamlit as st
 
 from data.data import load_syllabus, explode_syllabus, ensure_core_state
 from common.style import inject_css
-from common.ui import set_go, safe_rerun  # do not remove / rename
+from common.ui import set_go, safe_rerun
+
+# Initialize navigation
+if "_go" not in st.session_state:
+    go = set_go()
+else:
+    go = st.session_state["_go"]
 
 # Pages
 from homepage.homepage import page_home, page_select_subject_main
