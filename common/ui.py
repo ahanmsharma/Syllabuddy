@@ -1,67 +1,32 @@
+# common/ui.py
+from __future__ import annotations
 import streamlit as st
+from typing import Any
 
-# ------------------------------
-# Central rerun + navigation
-# ------------------------------
+# --- Init session ---
+def init_session(default_route: str = "home") -> None:
+    if "route" not in st.session_state:
+        st.session_state["route"] = default_route
+    if "params" not in st.session_state:
+        st.session_state["params"] = {}
 
-def safe_rerun():
-    """
-    Wrapper around st.rerun for compatibility with older/newer Streamlit versions.
-    """
-    if hasattr(st, "rerun"):
+# --- Navigation ---
+def go(route: str, **params: Any) -> None:
+    st.session_state["route"] = route
+    if params:
+        st.session_state["params"] = params
+    safe_rerun()
+
+def get_param(name: str, default: Any = None) -> Any:
+    return st.session_state.get("params", {}).get(name, default)
+
+def safe_rerun() -> None:
+    try:
         st.rerun()
-    elif hasattr(st, "experimental_rerun"):
-        st.experimental_rerun()
-    else:
-        raise RuntimeError("No rerun method available in this Streamlit version.")
+    except RuntimeError:
+        pass
 
-def set_go():
-    """
-    Inject a 'go' function into session_state for navigation.
-    Usage: st.session_state['_go']("route_name")
-    """
-    def go(route: str):
-        st.session_state["route"] = route
-        safe_rerun()
-
-    # Put it in session_state for global access
-    st.session_state["_go"] = go
-    return go
-
-# ------------------------------
-# UI helpers
-# ------------------------------
-
-def topbar(title: str, back_to: str = None):
-    """
-    Simple top bar with optional back button.
-    """
-    c1, c2 = st.columns([1,6], vertical_alignment="center")
-    with c1:
-        if back_to:
-            if st.button("⬅ Back", key=f"back_{title}"):
-                st.session_state["_go"](back_to)
-    with c2:
-        st.title(title)
-
-# ---------- key helpers (stable keys for widgets) ----------
-def k_subject_open(subject: str, prefix: str) -> str:
-    return f"{prefix}_subject_open_{subject}"
-
-def k_subject_toggle(subject: str, prefix: str) -> str:
-    return f"{prefix}_subject_toggle_{subject}"
-
-def k_module_open(subject: str, module: str, prefix: str) -> str:
-    return f"{prefix}_module_open_{subject}_{module}"
-
-def k_module_toggle(subject: str, module: str, prefix: str) -> str:
-    return f"{prefix}_module_toggle_{subject}_{module}"
-
-def k_iq_open(subject: str, module: str, iq: str, prefix: str) -> str:
-    return f"{prefix}_iq_open_{subject}_{module}_{iq}"
-
-def k_iq_toggle(subject: str, module: str, iq: str, prefix: str) -> str:
-    return f"{prefix}_iq_toggle_{subject}_{module}_{iq}"
-
-def k_dp_toggle(subject: str, module: str, iq: str, dp: str, prefix: str) -> str:
-    return f"{prefix}_dp_toggle_{subject}_{module}_{iq}_{dp}"
+# --- Keys ---
+def ns(*parts: Any) -> str:
+    """Readable unique widget key."""
+    return ":".join(str(p) for p in parts)
