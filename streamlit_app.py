@@ -8,12 +8,12 @@ from typing import Dict, List, Tuple
 
 import streamlit as st
 
-# ---- Import shared UI + page modules ----
+# ---- Import shared UI + page modules (your existing files) ----
 from common.ui import get_go
-go = None  # global reference set in ensure_core_state()
+go = None  # will be set in ensure_core_state()
 
-from homepage.homepage import page_home, page_select_subject_main
-from srs.srs import page_srs_menu
+from homepage.homepage import page_home as _page_home, page_select_subject_main
+from srs.srs import page_srs_menu as _page_srs_menu
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
@@ -21,14 +21,9 @@ from selection.widgets import (
 )
 
 from review.review import page_srs_review, page_cram_review
-from ai.ai import page_ai_select, page_ai_review
 
-# FP engine (DnD integrated) — NEW file below
-from fp.fp import (
-    ensure_fp_state,
-    page_fp_flow,           # main FP engine (starts with General FP Questions)
-    page_exam_mode_placeholder,  # simple placeholder page
-)
+# NEW: MVP FP engine
+from fp.fp_mvp import ensure_fp_state, begin_fp_from_selection, page_fp_run
 
 
 # ---------------- Page config ----------------
@@ -60,7 +55,6 @@ def _fallback_syllabus() -> Dict:
         }
     }
 
-
 def load_syllabus() -> Dict:
     path = "syllabus.json"
     if os.path.exists(path):
@@ -70,7 +64,6 @@ def load_syllabus() -> Dict:
         except Exception:
             pass
     return _fallback_syllabus()
-
 
 def explode_syllabus(data: Dict) -> Tuple[
     List[str],
@@ -94,15 +87,18 @@ def explode_syllabus(data: Dict) -> Tuple[
 # ---------------- Bootstrap shared state ----------------
 def ensure_core_state():
     global go
-    go = get_go()
+    go = get_go()  # stores _go in session_state and returns it
 
+    # Route
     st.session_state.setdefault("route", "home")
 
-    st.session_state.setdefault("sel_dotpoints", set())
+    # Selection sets used by selection/review pages
+    st.session_state.setdefault("sel_dotpoints", set())  # set of (subject, module, iq, dp)
     st.session_state.setdefault("focus_subject", None)
-    st.session_state.setdefault("focus_module", None)
-    st.session_state.setdefault("focus_iq", None)
+    st.session_state.setdefault("focus_module", None)  # (s, m)
+    st.session_state.setdefault("focus_iq", None)      # (s, m, iq)
 
+    # Load syllabus fan-outs once
     if "_SYL" not in st.session_state:
         data = load_syllabus()
         subjects, mods, iqs, dps = explode_syllabus(data)
@@ -113,27 +109,21 @@ def ensure_core_state():
         st.session_state["_DPS"] = dps
 
 
-# ---------------- Cram "How to Review" ----------------
-def page_cram_how():
-    """Page shown after Cram Review, routes into SR or FP flow."""
-    st.title("How to review")
+# ---------------- Wrappers to add “Start FP” buttons ----------------
+def page_home():
+    _page_home()
+    # If the user already picked dotpoints (e.g., via AI review or manual review), show Start FP
+    if st.session_state.get("sel_dotpoints"):
+        st.divider()
+        if st.button("▶ Start Focused Practice", type="primary", use_container_width=True):
+            begin_fp_from_selection()
 
-    mode = st.radio(
-        "Choose order:",
-        ["SR (spaced repetition order)", "Prioritization (based on strengths/weaknesses)"],
-        index=1,
-    )
-
-    st.write("")
-    mid = st.columns(3)[1]
-    with mid:
-        if st.button("Proceed", type="primary", use_container_width=True):
-            if mode.startswith("Prioritization"):
-                # Start FP flow from the beginning (General FP Qs)
-                go("fp_flow")
-            else:
-                # Clean entry point to SR hub (not review page)
-                go("srs_menu")
+def page_srs_menu():
+    _page_srs_menu()
+    if st.session_state.get("sel_dotpoints"):
+        st.info(f"{len(st.session_state['sel_dotpoints'])} selected dotpoint(s) ready.")
+        if st.button("▶ Start Focused Practice (SR selection)", type="primary", use_container_width=True):
+            begin_fp_from_selection()
 
 
 # ---------------- Router ----------------
@@ -155,29 +145,30 @@ ROUTES = {
     "srs_iqs":      page_srs_iqs,
     "srs_dotpoints": page_srs_dotpoints,
 
-    # Review screens
+    # Review screens (unchanged)
     "srs_review":  page_srs_review,
     "cram_review": page_cram_review,
-    "cram_how":    page_cram_how,  # wired from your unchanged review/review.py
 
-    # AI suggestion/review
-    "ai_select": page_ai_select,
-    "ai_review": page_ai_review,
-
-    # FP engine
-    "fp_flow":         page_fp_flow,
-    "exam_mode":       page_exam_mode_placeholder,  # quick jump target
+    # NEW: FP MVP routes
+    "fp_start": begin_fp_from_selection,  # build queue + route to fp_run
+    "fp_run":   page_fp_run,
 }
 
 
 # ---------------- Main dispatch ----------------
 def main():
     ensure_core_state()
-    ensure_fp_state()
+    ensure_fp_state()  # FP engine state
 
     route = st.session_state.get("route", "home")
-    ROUTES.get(route, page_home)()
+    handler = ROUTES.get(route)
+    if handler is None:
+        st.session_state["route"] = "home"
+        st.rerun()
 
+    # If handler is a function that sets state and reruns (e.g., begin_fp_from_selection)
+    # just call it; otherwise render a page.
+    handler()
 
 if __name__ == "__main__":
     main()
