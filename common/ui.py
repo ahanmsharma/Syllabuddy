@@ -73,7 +73,3 @@ def k_iq_toggle(subject: str, module: str, iq: str, prefix: str) -> str:
 
 def k_dp_toggle(subject: str, module: str, iq: str, dp: str, prefix: str) -> str:
     return f"{prefix}_dp_toggle_{subject}_{module}_{iq}_{dp}"
-
-def stable_key_tuple(item: tuple[str, ...]) -> str:
-    """Create a stable string key from a tuple of strings."""
-    return "|".join(item)

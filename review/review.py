@@ -59,10 +59,15 @@ def _render_cards(route_key: str, rows: List[Tuple[str,str,str,str]]) -> tuple[i
     kept_count = 0
     removed_count = 0
 
-    # Each card is a small form so the click doesn't conflict with others
-    for item in rows:
-        s,m,iq,dp = item
-        sk = stable_key_tuple(item)
+    # Each card is a small form so clicks don't interfere with each other.
+    #
+    # Use the list index as part of the stable key so that identical dotpoints
+    # (same subject/module/iq/text) can still be toggled independently.  This
+    # prevents a toggle on one card from unexpectedly affecting another with
+    # the same content.
+    for idx, item in enumerate(rows):
+        s, m, iq, dp = item
+        sk = stable_key_tuple((str(idx),) + item)
         is_removed = (sk in removed)
         cls = _class(is_removed)
         pill = _pill(is_removed)
@@ -119,12 +124,15 @@ def review_box(
 
         if apply_click or submit_click:
             removed = _get_removed(route_key)
-            kept_items = {itm for itm in rows if stable_key_tuple(itm) not in removed}
+            kept_items = {
+                itm for idx, itm in enumerate(rows)
+                if stable_key_tuple((str(idx),) + itm) not in removed
+            }
             st.session_state["sel_dotpoints"] = kept_items
             st.success("Selection updated.")
+            # after applying the changes, reset removal marks so indexes stay in sync
+            _save_removed(route_key, set())
             if submit_click:
-                # clear marks so next visit is clean
-                st.session_state[f"review:{route_key}:removed"] = set()
                 go(after_submit_route)
 
 # ---- Pages ----
