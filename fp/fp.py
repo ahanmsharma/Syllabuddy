@@ -4,7 +4,7 @@ import random, re, pathlib
 from typing import Dict, List, Tuple, Optional
 
 import streamlit as st
-from common.ui import topbar, go
+from common.ui import topbar, get_go
 import streamlit.components.v1 as components
 
 # ---------- Try to attach your existing DnD component ----------
@@ -186,6 +186,7 @@ def _render_cloze(segs: List[str], answers: List[str], fills: List[Optional[str]
 # ---------- Public pages ----------
 def page_weakness_report():
     ensure_fp_state()
+    go = get_go()
     topbar("AI selection — enter weaknesses", back_to="select_subject_main")
     st.write("Enter weaknesses (semicolon-separated). The flow will cover **specific** then **general** for each weakness. "
              "If you add **specific** sub-weaknesses later, they run before returning to the general item.")
@@ -223,6 +224,7 @@ def page_weakness_report():
 
 def page_fp_flow():
     ensure_fp_state()
+    go = get_go()
     ss = st.session_state
 
     topbar("Focused Practice (Specific → General)", back_to="weakness_report")
