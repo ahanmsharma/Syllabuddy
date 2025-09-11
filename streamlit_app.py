@@ -9,13 +9,8 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
-
-# Navigation is provided via a ``go`` function stored in ``st.session_state``.
-# Use ``get_go`` to fetch (and lazily create) this function during bootstrap.
 from common.ui import get_go
-
-# Global reference for convenience; initialised in ``ensure_core_state``.
-go = None
+go = None  # global reference set in ensure_core_state()
 
 from homepage.homepage import page_home, page_select_subject_main
 from srs.srs import page_srs_menu
@@ -38,7 +33,6 @@ st.set_page_config(page_title="Syllabuddy", layout="wide")
 
 # ---------------- Data loading ----------------
 def _fallback_syllabus() -> Dict:
-    # Minimal built-in so app always runs
     return {
         "Biology": {
             "Module 6: Genetic Change": {
@@ -80,13 +74,6 @@ def explode_syllabus(data: Dict) -> Tuple[
     Dict[Tuple[str, str], List[str]],
     Dict[Tuple[str, str, str], List[str]]
 ]:
-    """
-    Return:
-      subjects,
-      modules_by_subject,
-      iqs_by_subject_module,
-      dotpoints_by_subject_module_iq
-    """
     subjects = list(data.keys())
     modules_by_subject = {s: list(data[s].keys()) for s in subjects}
     iqs_by_subject_module = {}
@@ -102,28 +89,46 @@ def explode_syllabus(data: Dict) -> Tuple[
 
 # ---------------- Bootstrap shared state ----------------
 def ensure_core_state():
-    # Navigation handler
     global go
-    go = get_go()  # ensure ``_go`` exists and keep a local reference
+    go = get_go()
 
-    # Route
     st.session_state.setdefault("route", "home")
 
-    # Selection sets required by selection/review pages
-    st.session_state.setdefault("sel_dotpoints", set())  # set of (subject, module, iq, dp)
+    st.session_state.setdefault("sel_dotpoints", set())
     st.session_state.setdefault("focus_subject", None)
-    st.session_state.setdefault("focus_module", None)  # (s, m)
-    st.session_state.setdefault("focus_iq", None)      # (s, m, iq)
+    st.session_state.setdefault("focus_module", None)
+    st.session_state.setdefault("focus_iq", None)
 
-    # Load syllabus once and fan out into fast-lookups used by selection pages
     if "_SYL" not in st.session_state:
         data = load_syllabus()
         subjects, mods, iqs, dps = explode_syllabus(data)
         st.session_state["_SYL"] = data
         st.session_state["_SUBJECTS"] = subjects
-        st.session_state["_MODS"] = mods                     # Dict[str, List[str]]
-        st.session_state["_IQS"] = iqs                       # Dict[(s,m), List[iq]]
-        st.session_state["_DPS"] = dps                       # Dict[(s,m,iq), List[dp]]
+        st.session_state["_MODS"] = mods
+        st.session_state["_IQS"] = iqs
+        st.session_state["_DPS"] = dps
+
+
+# ---------------- Cram "How to Review" ----------------
+def page_cram_how():
+    """Page shown after Cram Review, routes into SR or FP flow."""
+    topbar = lambda title: st.title(title)  # minimal inline topbar
+    topbar("How to review")
+
+    mode = st.radio(
+        "Choose order:",
+        ["SR (spaced repetition order)", "Prioritization (based on strengths/weaknesses)"],
+        index=1,
+    )
+
+    st.write("")
+    mid = st.columns(3)[1]
+    with mid:
+        if st.button("Proceed", type="primary", use_container_width=True):
+            if mode.startswith("Prioritization"):
+                go("weakness_report")
+            else:
+                go("srs_subjects")
 
 
 # ---------------- Router ----------------
@@ -148,12 +153,13 @@ ROUTES = {
     # Review screens
     "srs_review":  page_srs_review,
     "cram_review": page_cram_review,
+    "cram_how":    page_cram_how,  # NEW route
 
     # AI suggestion/review
     "ai_select": page_ai_select,
     "ai_review": page_ai_review,
 
-    # FP engine (DnD cloze + specific→general queue)
+    # FP engine
     "weakness_report": page_weakness_report,
     "fp_flow":         page_fp_flow,
 }
@@ -162,7 +168,7 @@ ROUTES = {
 # ---------------- Main dispatch ----------------
 def main():
     ensure_core_state()
-    ensure_fp_state()  # initialize FP engine state safely
+    ensure_fp_state()
 
     route = st.session_state.get("route", "home")
     ROUTES.get(route, page_home)()
