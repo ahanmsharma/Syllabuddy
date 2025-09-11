@@ -62,8 +62,6 @@ def _render_cards(route_key: str, rows: List[Tuple[str, str, str, str]]) -> tupl
     removed_count = 0
 
     # Each card is a small form so clicks don't interfere with each other.
-    # Use the list index as part of the stable key so that identical dotpoints
-    # (same subject/module/iq/text) can still be toggled independently. This
     # prevents a toggle on one card from unexpectedly affecting another with
     # the same content.
     for idx, item in enumerate(rows):
