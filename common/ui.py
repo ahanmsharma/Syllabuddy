@@ -1,3 +1,13 @@
+"""Shared UI helpers for Streamlit pages.
+
+This module consolidates small utilities used across the Streamlit pages.
+It also offers helpers for generating stable keys for widgets so that
+state can be reliably stored between reruns.
+"""
+
+import hashlib
+from typing import Iterable
+
 import streamlit as st
 
 # ------------------------------
@@ -41,10 +51,8 @@ def get_go():
 # ------------------------------
 
 def topbar(title: str, back_to: str = None):
-    """
-    Simple top bar with optional back button.
-    """
-    c1, c2 = st.columns([1,6], vertical_alignment="center")
+    """Simple top bar with an optional back button."""
+    c1, c2 = st.columns([1, 6], vertical_alignment="center")
     with c1:
         if back_to:
             if st.button("⬅ Back", key=f"back_{title}"):
@@ -53,6 +61,17 @@ def topbar(title: str, back_to: str = None):
         st.title(title)
 
 # ---------- key helpers (stable keys for widgets) ----------
+
+def stable_key_tuple(items: Iterable[str]) -> str:
+    """Return a deterministic key for a sequence of strings.
+
+    The built-in :func:`hash` is randomised between interpreter sessions, so
+    for stable widget keys we derive a short SHA-256 digest of the joined
+    strings.  The digest is truncated to keep keys compact.
+    """
+    joined = "\x1f".join(str(it) for it in items)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]
+
 def k_subject_open(subject: str, prefix: str) -> str:
     return f"{prefix}_subject_open_{subject}"
 
