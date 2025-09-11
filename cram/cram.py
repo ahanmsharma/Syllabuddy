@@ -1,39 +1,14 @@
 import streamlit as st
-from common.ui import topbar, go
-from selection.widgets import subject_cards, module_cards, iq_cards, dotpoint_cards
-
-def page_cram_subjects():
-    subject_cards(
-        key_prefix="cram",
-        back_to=("srs_menu" if st.session_state["cram_mode"] else "select_subject_main")
-    )
-    mid = st.columns([1,1,1])[1]
-    with mid:
-        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go("cram_review")
-
-def page_cram_modules():
-    s = st.session_state.get("focus_subject")
-    if not s: go("cram_subjects"); return
-    module_cards(s, key_prefix="cram", back_to="cram_subjects")
-
-def page_cram_iqs():
-    sm = st.session_state.get("focus_module")
-    if not sm: go("cram_modules"); return
-    s, m = sm
-    iq_cards(s, m, key_prefix="cram", back_to="cram_modules")
-
-def page_cram_dotpoints():
-    smi = st.session_state.get("focus_iq")
-    if not smi: go("cram_iqs"); return
-    s, m, iq = smi
-    dotpoint_cards(s, m, iq, key_prefix="cram", back_to="cram_iqs")
-    mid = st.columns([1,1,1])[1]
-    with mid:
-        if st.button("Review selected dotpoints", type="primary", use_container_width=True):
-            go("cram_review")
+from common.ui import topbar, get_go
+from selection.widgets import (
+    page_cram_subjects,
+    page_cram_modules,
+    page_cram_iqs,
+    page_cram_dotpoints,
+)
 
 def page_cram_how():
+    go = get_go()
     topbar("How to review", back_to="cram_review")
     mode = st.radio("Choose order:", ["SR order (spaced repetition)", "Prioritization (based on strengths/weaknesses)"])
     if mode.startswith("Prioritization"):

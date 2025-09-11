@@ -1,19 +1,21 @@
 from typing import List, Tuple
 import streamlit as st
-from common.ui import topbar, go, stable_key_tuple
+from common.ui import topbar, get_go
 
-# Removed set stored deterministically (no random keys)
-def _get_removed(route_key: str) -> set[str]:
+# Removed index set stored deterministically (no random keys)
+def _get_removed(route_key: str) -> set[int]:
     k = f"review:{route_key}:removed"
     if k not in st.session_state:
         st.session_state[k] = set()
-    # ensure set type (may be serialized)
-    if isinstance(st.session_state[k], list):
-        st.session_state[k] = set(st.session_state[k])
-    return st.session_state[k]
+    val = st.session_state[k]
+    if isinstance(val, list):
+        val = {int(x) for x in val}
+        st.session_state[k] = val
+    return val
 
-def _save_removed(route_key: str, removed: set[str]):
-    st.session_state[f"review:{route_key}:removed"] = set(removed)
+def _save_removed(route_key: str, removed: set[int]):
+    # store as list for stable serialization
+    st.session_state[f"review:{route_key}:removed"] = list(removed)
 
 # theme-aware CSS
 REVIEW_CSS = """
@@ -54,16 +56,15 @@ def _class(is_removed: bool) -> str:
 def _toggle_label(is_removed: bool) -> str:
     return "🔁 Mark Kept" if is_removed else "🔁 Mark Removed"
 
-def _render_cards(route_key: str, rows: List[Tuple[str,str,str,str]]) -> tuple[int,int]:
+def _render_cards(route_key: str, rows: List[Tuple[str, str, str, str]]) -> tuple[int, int]:
     removed = _get_removed(route_key)
     kept_count = 0
     removed_count = 0
 
-    # Each card is a small form so the click doesn't conflict with others
-    for item in rows:
-        s,m,iq,dp = item
-        sk = stable_key_tuple(item)
-        is_removed = (sk in removed)
+    # Each card is an isolated button so toggles don't interfere with each other.
+    for idx, item in enumerate(rows):
+        s, m, iq, dp = item
+        is_removed = idx in removed
         cls = _class(is_removed)
         pill = _pill(is_removed)
 
@@ -76,17 +77,16 @@ def _render_cards(route_key: str, rows: List[Tuple[str,str,str,str]]) -> tuple[i
 
             st.markdown(f'<div class="dp-text">{dp}</div>', unsafe_allow_html=True)
 
-            with st.form(key=f"form:card:{route_key}:{sk}"):
-                submitted = st.form_submit_button(_toggle_label(is_removed), use_container_width=True)
-                if submitted:
-                    if is_removed:
-                        removed.discard(sk)
-                    else:
-                        removed.add(sk)
-                    _save_removed(route_key, removed)
+            btn_key = f"btn:card:{route_key}:{idx}"
+            if st.button(_toggle_label(is_removed), key=btn_key, use_container_width=True):
+                if is_removed:
+                    removed.discard(idx)
+                else:
+                    removed.add(idx)
+                _save_removed(route_key, removed)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        if sk in removed:
+        if idx in removed:
             removed_count += 1
         else:
             kept_count += 1
@@ -100,6 +100,7 @@ def review_box(
     back_to: str,
     after_submit_route: str,
 ):
+    go = get_go()
     topbar(title, back_to=back_to)
     st.markdown(REVIEW_CSS, unsafe_allow_html=True)
 
@@ -118,12 +119,15 @@ def review_box(
 
         if apply_click or submit_click:
             removed = _get_removed(route_key)
-            kept_items = {itm for itm in rows if stable_key_tuple(itm) not in removed}
+            kept_items = {
+                itm for idx, itm in enumerate(rows)
+                if idx not in removed
+            }
             st.session_state["sel_dotpoints"] = kept_items
             st.success("Selection updated.")
+            # after applying the changes, reset removal marks so indexes stay in sync
+            _save_removed(route_key, set())
             if submit_click:
-                # clear marks so next visit is clean
-                st.session_state[f"review:{route_key}:removed"] = set()
                 go(after_submit_route)
 
 # ---- Pages ----

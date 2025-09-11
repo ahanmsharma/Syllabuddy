@@ -15,18 +15,26 @@ def safe_rerun():
     else:
         raise RuntimeError("No rerun method available in this Streamlit version.")
 
-def set_go():
+def set_go(go=None):
     """
-    Inject a 'go' function into session_state for navigation.
-    Usage: st.session_state['_go']("route_name")
+    Inject a 'go' function into ``st.session_state`` for navigation.
+
+    If ``go`` is ``None`` a default implementation is created which sets the
+    ``route`` entry in ``session_state`` and triggers a rerun.  The function
+    stored in ``session_state['_go']`` is returned.
     """
-    def go(route: str):
-        st.session_state["route"] = route
-        safe_rerun()
+    if go is None:
+        def go(route: str):
+            st.session_state["route"] = route
+            safe_rerun()
 
     # Put it in session_state for global access
     st.session_state["_go"] = go
     return go
+
+def get_go():
+    """Helper to retrieve the navigation function from session state."""
+    return st.session_state.get("_go")
 
 # ------------------------------
 # UI helpers
@@ -65,3 +73,7 @@ def k_iq_toggle(subject: str, module: str, iq: str, prefix: str) -> str:
 
 def k_dp_toggle(subject: str, module: str, iq: str, dp: str, prefix: str) -> str:
     return f"{prefix}_dp_toggle_{subject}_{module}_{iq}_{dp}"
+
+def stable_key_tuple(item: tuple[str, ...]) -> str:
+    """Create a collision‑free widget key from a tuple of strings."""
+    return "|".join(f"{len(part)}:{part}" for part in item)
