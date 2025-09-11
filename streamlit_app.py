@@ -19,9 +19,6 @@ from common.ui import set_go
 # reference for convenience.
 go = set_go()
 
-from homepage.homepage import page_home, page_select_subject_main
-from srs.srs import page_srs_menu
-
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
     page_srs_subjects,  page_srs_modules,  page_srs_iqs,  page_srs_dotpoints,
