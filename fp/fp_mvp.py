@@ -6,19 +6,20 @@ from typing import Dict, List, Tuple, Optional
 
 import streamlit as st
 
-# ========== Theme-aware CSS (global-frame + cloze card) ==========
+# ================= Theme-aware CSS =================
 FP_CSS = """
 <style>
 :root{
   --bg:#ffffff; --text:#111827; --muted:#6b7280;
   --ok:#16a34a; --bad:#dc2626; --border:#e5e7eb;
-  --card:#ffffff; --cardTint:#f8fafc;
+  --card:#ffffff; --cardTint:#f8fafc; --inputBg:#ffffff; --inputText:#111827;
 }
 @media (prefers-color-scheme: dark){
   :root{
     --bg:#0b1220; --text:#e5e7eb; --muted:#94a3b8;
     --ok:#22c55e; --bad:#ef4444; --border:#334155;
     --card:#0f172a; --cardTint:#111827;
+    --inputBg:#0b1220; --inputText:#e5e7eb;
   }
 }
 .global-frame{
@@ -39,14 +40,30 @@ FP_CSS = """
   border-image-slice:1; border-style:solid; border-width:2px;
   border-image-source: linear-gradient(90deg, var(--bad) var(--badpct,30%), var(--ok) var(--badpct,30%));
 }
-.hl{ color:var(--muted); font-weight:600; }
-.dp-title{ font-weight:800; font-size:1.1rem; margin:.25rem 0 .75rem 0; color:var(--text); }
+.dp-title{ font-weight:800; font-size:1.14rem; margin:.25rem 0 .75rem 0; color:var(--text); }
 .subtle{ color:var(--muted); }
+.hl{ color:var(--muted); font-weight:600; }
+
+/* Inputs readable in dark mode */
+textarea, input[type="text"]{
+  background: var(--inputBg) !important;
+  color: var(--inputText) !important;
+}
+
+/* Per-blank review row */
+.blank-row{
+  border:2px solid var(--border); border-radius:10px; padding:10px; margin-bottom:10px;
+}
+.blank-row.ok{ border-color: var(--ok); }
+.blank-row.bad{ border-color: var(--bad); }
+.blank-lab{ font-weight:700; color:var(--muted); }
+.blank-you{ margin-top:4px; }
+.blank-correct{ margin-top:2px; color:var(--muted); }
 </style>
 """
 st.markdown(FP_CSS, unsafe_allow_html=True)
 
-# ========== Public entrypoints ==========
+# ============== Public entrypoints ==============
 def ensure_fp_state():
     if "_fp" not in st.session_state:
         _reset_all()
@@ -83,20 +100,28 @@ def page_fp_run():
 
     if stage == "fp_general":
         _stage_fp_general(s, m, iq, dotpoint)
+    elif stage == "fp_general_review":
+        _stage_fp_general_review()
     elif stage == "report_general":
         _stage_report_general()
     elif stage == "cloze_general":
         _stage_cloze(is_specific=False)
-    elif stage == "post_cloze_general":
-        _stage_post_cloze_general()
+    elif stage == "cloze_general_review":
+        _stage_cloze_review(is_specific=False)
+    elif stage == "weakness_review_general":
+        _stage_weakness_review_general()
     elif stage == "report_specific":
         _stage_report_specific()
     elif stage == "fp_specific_q":
         _stage_fp_specific_question(s, m, iq, dotpoint)
+    elif stage == "fp_specific_review":
+        _stage_fp_specific_review()
     elif stage == "cloze_specific":
         _stage_cloze(is_specific=True)
-    elif stage == "post_cloze_specific":
-        _stage_post_cloze_specific()
+    elif stage == "cloze_specific_review":
+        _stage_cloze_review(is_specific=True)
+    elif stage == "weakness_review_specific":
+        _stage_weakness_review_specific()
     elif stage == "fp_more":
         _stage_fp_more()
     elif stage == "decision":
@@ -105,7 +130,7 @@ def page_fp_run():
         st.session_state._fp["stage"] = "fp_general"
         st.rerun()
 
-# ========== Internal state/model ==========
+# ============== Internal state/model ==============
 def _reset_all():
     st.session_state._fp = {
         "queue": [], "q_idx": 0,
@@ -113,6 +138,8 @@ def _reset_all():
         "fp_q": None,
         "direct_exam": False,
         "user_blurt": "",
+        "fp_general_rating": None,
+        "fp_general_model_answer": None,
 
         "reports": {"weaknesses":"", "strengths":""},
         # general weaknesses
@@ -127,6 +154,8 @@ def _reset_all():
         # follow-ups one-by-one
         "follow_qs": [],
         "follow_idx": 0,
+        "spec_q_rating": None,
+        "spec_q_model_answer": None,
 
         # cloze scratch
         "current_cloze": None,
@@ -134,9 +163,10 @@ def _reset_all():
         "correct_flags": None,
         "last_cloze_result": None,
         "_segs": None, "_ans": None, "_bank": None, "_fills": None,
+        "cloze_rating": None,
 
-        # ratings
-        "ratings": [],  # list of dicts per step
+        # ratings log
+        "ratings": [],
     }
 
 def _reset_for_current_dp():
@@ -146,12 +176,17 @@ def _reset_for_current_dp():
         "fp_q": None,
         "direct_exam": False,
         "user_blurt": "",
+        "fp_general_rating": None,
+        "fp_general_model_answer": None,
+
         "reports": {"weaknesses":"", "strengths":""},
         "general_list": [], "general_idx": 0, "cur_general": None,
         "spec_map": {}, "spec_queue": [], "cur_specific": None,
-        "follow_qs": [], "follow_idx": 0,
+        "follow_qs": [], "follow_idx": 0, "spec_q_rating": None, "spec_q_model_answer": None,
+
         "current_cloze": None, "cloze_specificity": 0, "correct_flags": None,
         "last_cloze_result": None, "_segs": None, "_ans": None, "_bank": None, "_fills": None,
+        "cloze_rating": None,
         "ratings": [],
     })
 
@@ -169,7 +204,7 @@ def _current_dp() -> Optional[Tuple[str,str,str,str]]:
         return None
     return q[st.session_state._fp["q_idx"]]
 
-# ========== Prompts / Cloze ==========
+# ============== Prompts / Model answers / Cloze ==============
 def _smart_fp(dotpoint: str, subject: str) -> str:
     subj = (subject or "").lower()
     if subj in ("physics", "chemistry"):
@@ -180,13 +215,20 @@ def _smart_fp(dotpoint: str, subject: str) -> str:
                 f"Identify necessary conditions and predict what happens if one is violated.")
     return (f"From first principles, explain and derive: “{dotpoint}”. Include assumptions and edge cases.")
 
-def _placeholder_report(ans: str) -> Dict:
-    # lightweight, deterministic for MVP
-    return {
-        "suggested_weaknesses": ["definition gap", "unclear mechanism", "weak example"],
-        "suggested_strengths": ["correct terms", "coherent structure"]
-    }
-
+def _model_answer(dotpoint: str, subject: str, mode: str = "general") -> str:
+    """Placeholder AI model answer (keep deterministic for MVP)."""
+    if mode == "specific":
+        return (f"**Model answer (specific):** Clearly define the sub-idea, outline the stepwise reasoning, "
+                f"and connect it to “{dotpoint}”. Include one worked micro-example and the key assumption.")
+    subj = (subject or "").lower()
+    if subj in ("physics", "chemistry"):
+        return (f"**Model answer:** Start from definitions and conservation principles. Derive the governing relation for "
+                f"“{dotpoint}”, justify each step, and note limiting cases (e.g., small angle/low concentration).")
+    if subj == "biology":
+        return (f"**Model answer:** Describe structures involved, causal mechanism, and necessary conditions for "
+                f"“{dotpoint}”. Predict outcomes if a condition is removed, linking structure → function.")
+    return (f"**Model answer:** Provide a definition, develop the principle logically, and illustrate with a compact example for “{dotpoint}”.")
+    
 _BLANK_RE = re.compile(r"\[\[(.+?)\]\]")
 
 def _placeholder_cloze(level:int=0) -> str:
@@ -210,7 +252,6 @@ def _split_cloze(cloze: str) -> Tuple[List[str], List[str]]:
         segments.append(parts[i+1] if i+1 < len(parts) else "")
     return segments, answers
 
-# component loader (DnD). Falls back to typed blanks if build/ missing.
 def _get_component():
     import streamlit.components.v1 as components
     import pathlib
@@ -236,7 +277,7 @@ def _render_cloze(segments, answers, fills, bank, key, show_feedback=False):
             key=key,
             default=None,
         )
-    # fallback typed blanks (dark-mode text is handled by global CSS colors)
+    # fallback typed blanks (dark-mode styled via CSS above)
     new_fills = list(fills)
     for i in range(len(answers)):
         st.write(segments[i])
@@ -245,7 +286,7 @@ def _render_cloze(segments, answers, fills, bank, key, show_feedback=False):
     flags = [(a.strip().lower() == (new_fills[i] or "").strip().lower()) for i, a in enumerate(answers)]
     return {"bank": bank, "fills": new_fills, "correct": flags}
 
-# ========== Stages ==========
+# ============== Stages ==============
 def _stage_fp_general(s, m, iq, dotpoint):
     fp = st.session_state._fp
     if not fp["fp_q"]:
@@ -255,23 +296,35 @@ def _stage_fp_general(s, m, iq, dotpoint):
     with st.form("fp_general_form"):
         blurt = st.text_area("Your answer", key="fp_blurt", height=280,
                              placeholder="Type your answer here…")
-        pref = st.checkbox("Skip straight to Exam Mode (optional)", value=False)
-        submitted = st.form_submit_button("Continue", type="primary")
+        direct_exam = st.checkbox("Skip to Exam Mode (optional)", value=False)
+        submitted = st.form_submit_button("Submit", type="primary")
 
     if submitted:
         fp["user_blurt"] = blurt or ""
-        fp["direct_exam"] = bool(pref)
-        if fp["direct_exam"]:
-            st.info("Exam Mode placeholder (HSC-style questions + sample answers).")
-            if st.button("Return to FP"):
-                fp["direct_exam"] = False
-                st.rerun()
-            return
-        sug = _placeholder_report(fp["user_blurt"])
-        fp["reports"] = {"weaknesses": "; ".join(sug["suggested_weaknesses"]),
-                         "strengths": "; ".join(sug["suggested_strengths"])}
-        fp["stage"] = "report_general"
+        fp["direct_exam"] = bool(direct_exam)
+        fp["fp_general_model_answer"] = _model_answer(dotpoint, s, "general")
+
+        # Move to review page: show model answer + immediate rating
+        fp["stage"] = "fp_general_review"
         st.rerun()
+
+def _stage_fp_general_review():
+    fp = st.session_state._fp
+    st.markdown(fp["fp_general_model_answer"], unsafe_allow_html=True)
+    fp["fp_general_rating"] = st.slider("Rate your understanding (0–10)", 0, 10, 6, key="rate_fp_gen")
+    cols = st.columns([1,1,1])
+    with cols[1]:
+        if st.button("Continue", type="primary", use_container_width=True):
+            fp["ratings"].append({"stage":"fp_general", "score": fp["fp_general_rating"]})
+            if fp["direct_exam"]:
+                st.info("Exam Mode placeholder (HSC-style questions + sample answers).")
+                if st.button("Return to FP"):
+                    fp["direct_exam"] = False
+                    st.rerun()
+                return
+            # proceed to weakness edit (general)
+            fp["stage"] = "report_general"
+            st.rerun()
 
 def _stage_report_general():
     fp = st.session_state._fp
@@ -316,70 +369,110 @@ def _stage_cloze(is_specific: bool):
     if comp_state:
         fp["_bank"]  = comp_state.get("bank", bank)
         fp["_fills"] = comp_state.get("fills", fills)
-        fp["correct_flags"] = comp_state.get("correct", fp["correct_flags"])
+        # for fallback path we already computed 'correct' above; keep it if provided
+        if comp_state.get("correct") is not None:
+            fp["correct_flags"] = comp_state.get("correct")
 
     if st.button("Submit", type="primary"):
         if fp["correct_flags"] is None:
             got = [ (x or "") for x in fp["_fills"] ]
             fp["correct_flags"] = [ a.strip().lower() == g.strip().lower() for a, g in zip(ans, got) ]
+        # Go to review screen
+        fp["stage"] = "cloze_specific_review" if is_specific else "cloze_general_review"
         st.rerun()
 
-    # Feedback (green/red frame + card), then go to rating page
-    if fp["correct_flags"] is not None:
-        c = sum(fp["correct_flags"]); total = len(fp["correct_flags"]) or 1
-        bad_pct = int((total - c) / total * 100)
-        frame_class = "good" if c == total else "mixed"
-        st.markdown(f'<div class="global-frame {frame_class}" style="--badpct:{bad_pct}%"></div>', unsafe_allow_html=True)
-        klass = "good" if c == total else "mixed"
-        st.markdown(
-            f'<div class="cloze-card {klass}" style="--badpct:{bad_pct}%">'
-            f'<span class="hl">Cloze review:</span> Score {c}/{total}. '
-            f'Green/red borders reflect correctness (dark-mode friendly).'
-            f'</div>', unsafe_allow_html=True
-        )
-        fp["last_cloze_result"] = (c, total)
-        fp["stage"] = "post_cloze_specific" if is_specific else "post_cloze_general"
-        st.rerun()
+def _render_cloze_review_table(ans: List[str], fills: List[Optional[str]]):
+    """Show each blank with your answer vs correct, with green/red borders."""
+    for i, a in enumerate(ans):
+        you = (fills[i] or "").strip()
+        ok = (you.lower() == a.strip().lower())
+        klass = "ok" if ok else "bad"
+        st.markdown(f'<div class="blank-row {klass}">', unsafe_allow_html=True)
+        st.markdown(f'<div class="blank-lab">Blank {i+1}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="blank-you"><b>Your answer:</b> {you if you else "<i>(empty)</i>"}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="blank-correct"><b>Correct:</b> {a}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-def _stage_post_cloze_general():
+def _stage_cloze_review(is_specific: bool):
     fp = st.session_state._fp
-    c, t = fp["last_cloze_result"] if fp["last_cloze_result"] else (0,0)
-    st.info(f"Cloze score (general): {c}/{t}")
-    rating = st.slider("Rate your understanding of this general target (0–10)", 0, 10, 7, key="rate_gen_cloze")
-    more_w = st.text_input("Add (or refine) general weaknesses (semicolon-separated)", key="add_gen_w")
-    if st.button("Continue", type="primary"):
-        fp["ratings"].append({"stage":"post_cloze_general", "score": rating})
-        # merge new general weaknesses (cap 5)
-        add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
-        merged = fp["general_list"][:]
-        for w in add_list:
-            if w not in merged:
-                merged.append(w)
-        fp["general_list"] = merged[:5]
-        # next: collect specifics for this general
-        fp["stage"] = "report_specific"
-        st.rerun()
+    segs, ans, fills = fp["_segs"], fp["_ans"], fp["_fills"]
+    flags = fp["correct_flags"] or [False]*len(ans)
+    c = sum(flags); total = len(flags) or 1
+    bad_pct = int((total - c) / total * 100)
+    frame_class = "good" if c == total else "mixed"
+    st.markdown(f'<div class="global-frame {frame_class}" style="--badpct:{bad_pct}%"></div>', unsafe_allow_html=True)
+
+    st.subheader(f"Cloze score: {c}/{total}")
+    klass = "good" if c == total else "mixed"
+    st.markdown(
+        f'<div class="cloze-card {klass}" style="--badpct:{bad_pct}%">'
+        f'<span class="hl">Review each blank:</span> green = correct, red = incorrect.'
+        f'</div>', unsafe_allow_html=True
+    )
+    _render_cloze_review_table(ans, fills)
+
+    fp["cloze_rating"] = st.slider("Rate your understanding after this cloze (0–10)", 0, 10, 7,
+                                   key=f"rate_cloze_{'spec' if is_specific else 'gen'}")
+    cols = st.columns([1,1,1])
+    with cols[1]:
+        if st.button("Continue", type="primary", use_container_width=True):
+            fp["ratings"].append({"stage": "cloze_specific" if is_specific else "cloze_general",
+                                  "score": fp["cloze_rating"], "raw": f"{c}/{total}"})
+            # Next goes to weakness review screen
+            fp["stage"] = "weakness_review_specific" if is_specific else "weakness_review_general"
+            st.rerun()
+
+def _ai_weak_strengths_stub(context: str) -> Dict[str, List[str]]:
+    """Very concise AI-like suggestions (deterministic)."""
+    return {
+        "weak": ["term precision", "linking steps", "edge cases"][:3],
+        "strong": ["structure", "clear assumptions"][:2]
+    }
+
+def _stage_weakness_review_general():
+    fp = st.session_state._fp
+    cur = fp["cur_general"] or "this topic"
+    st.subheader("Weakness review")
+    stub = _ai_weak_strengths_stub(cur)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**AI Weaknesses (edit):**")
+        wk_text = st.text_area("weak", value="; ".join(stub["weak"]), key="wk_rev_gen", label_visibility="collapsed")
+    with right:
+        st.markdown("**AI Strengths (edit):**")
+        stg_text = st.text_area("strong", value="; ".join(stub["strong"]), key="stg_rev_gen", label_visibility="collapsed")
+
+    st.caption("Focus goes to your specific weaknesses first; or move on if satisfied.")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🔎 Focus this (specifics)", type="primary", use_container_width=True):
+            fp["reports"]["weaknesses"] = wk_text
+            fp["reports"]["strengths"] = stg_text
+            fp["stage"] = "report_specific"
+            st.rerun()
+    with c2:
+        if st.button("➡️ Move on", use_container_width=True):
+            fp["stage"] = "fp_more"
+            st.rerun()
 
 def _stage_report_specific():
     fp = st.session_state._fp
     cur = fp["cur_general"] or "this topic"
     st.caption(f"Add specific weaknesses for: **{cur}**")
-    defaults = "; ".join(fp["spec_map"].get(cur, []))
-    specs_text = st.text_input("Specific weaknesses (semicolon-separated)", value=defaults,
+    specs_text = st.text_input("Specific weaknesses (semicolon-separated)", value="",
                                key=f"specs_{cur}", placeholder="e.g., reverse osmosis; boundary conditions")
     if st.button("Continue", type="primary"):
         specs = [w.strip() for w in (specs_text or "").split(";") if w.strip()]
         fp["spec_map"][cur] = specs[:]
         fp["spec_queue"] = specs[:]
         fp["cur_specific"] = fp["spec_queue"].pop(0) if fp["spec_queue"] else None
-        # Build follow-up list (one at a time)
         fp["follow_qs"] = _followup_questions_for(fp["cur_specific"] or cur)
         fp["follow_idx"] = 0
         fp["stage"] = "fp_specific_q" if fp["cur_specific"] else "fp_more"
         st.rerun()
 
 def _stage_fp_specific_question(s, m, iq, dotpoint):
-    """Show ONE question at a time (question text is NOT in a textbox)."""
+    """One question at a time; model answer + rating on submit."""
     fp = st.session_state._fp
     cur_gen = fp["cur_general"] or "this topic"
     cur_spec = fp["cur_specific"] or cur_gen
@@ -402,26 +495,55 @@ def _stage_fp_specific_question(s, m, iq, dotpoint):
     st.write(qlist[idx])  # question text (not in a textbox)
     with st.form(key=f"fp_spec_q_{idx}"):
         ans = st.text_area("Your answer", height=160, key=f"spec_q_ans_{idx}")
-        rate = st.slider("Rate this specific question (0–10)", 0, 10, 7, key=f"spec_q_rate_{idx}")
-        nexted = st.form_submit_button("Next", type="primary")
-    if nexted:
-        fp["ratings"].append({"stage":"fp_specific_q", "q_index": idx, "score": rate})
-        fp["follow_idx"] = idx + 1
-        st.rerun()
+        submitted = st.form_submit_button("Submit", type="primary")
+
+    if submitted:
+        # Show model answer + rating immediately
+        st.markdown(_model_answer(dotpoint, s, mode="specific"), unsafe_allow_html=True)
+        fp["spec_q_rating"] = st.slider("Rate this answer (0–10)", 0, 10, 7, key=f"spec_q_rate_{idx}")
+        if st.button("Next", type="primary"):
+            fp["ratings"].append({"stage":"fp_specific_q", "q_index": idx, "score": fp["spec_q_rating"]})
+            fp["follow_idx"] = idx + 1
+            st.rerun()
+        return
+
+def _stage_fp_specific_review():
+    # (not used; we do review inline in _stage_fp_specific_question)
+    pass
 
 def _stage_cloze_specific():
     _stage_cloze(is_specific=True)
 
-def _stage_post_cloze_specific():
+def _stage_weakness_review_specific():
     fp = st.session_state._fp
-    c, t = fp["last_cloze_result"] if fp["last_cloze_result"] else (0,0)
-    st.info(f"Cloze score (specific): {c}/{t}")
-    rating = st.slider("Rate your understanding of this specific target (0–10)", 0, 10, 7, key="rate_spec_cloze")
-    # After specific cloze we go to quick consolidation
-    if st.button("Continue", type="primary"):
-        fp["ratings"].append({"stage":"post_cloze_specific", "score": rating})
-        fp["stage"] = "fp_more"
-        st.rerun()
+    cur = fp["cur_specific"] or fp["cur_general"] or "this topic"
+    st.subheader("Weakness review (specific)")
+    stub = _ai_weak_strengths_stub(cur)
+    left, right = st.columns(2)
+    with left:
+        wk_text = st.text_area("weak", value="; ".join(stub["weak"]), key="wk_rev_spec", label_visibility="collapsed")
+    with right:
+        stg_text = st.text_area("strong", value="; ".join(stub["strong"]), key="stg_rev_spec", label_visibility="collapsed")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Continue specifics", type="primary", use_container_width=True):
+            # More specifics in queue?
+            if st.session_state._fp["spec_queue"]:
+                st.session_state._fp["cur_specific"] = st.session_state._fp["spec_queue"].pop(0)
+                st.session_state._fp["follow_qs"] = _followup_questions_for(st.session_state._fp["cur_specific"])
+                st.session_state._fp["follow_idx"] = 0
+                st.session_state._fp["stage"] = "fp_specific_q"
+            else:
+                st.session_state._fp["stage"] = "fp_more"
+            st.rerun()
+    with c2:
+        if st.button("Move on", use_container_width=True):
+            st.session_state._fp["stage"] = "fp_more"
+            st.rerun()
+
+def _stage_cloze_specific_review():
+    _stage_cloze_review(is_specific=True)
 
 def _stage_fp_more():
     fp = st.session_state._fp
@@ -472,10 +594,10 @@ def _stage_decision():
             st.session_state["route"] = "home"
             st.rerun()
 
-# ========== Helpers ==========
+# ============== Helpers ==============
 def _followup_questions_for(weakness: str) -> List[str]:
     w = weakness or "this topic"
-    # Two clean, one-at-a-time prompts
+    # One-at-a-time prompts
     return [
         f"Explain {w} in your own words, then give a simple example.",
         f"List two common mistakes in {w} and how to avoid them."
