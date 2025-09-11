@@ -1,19 +1,19 @@
 from typing import List, Tuple
 import streamlit as st
-from common.ui import topbar, get_go
+from common.ui import topbar, get_go, stable_key_tuple
 
-# Removed index set stored deterministically (no random keys)
-def _get_removed(route_key: str) -> set[int]:
+# Removed key set stored deterministically (no random keys)
+def _get_removed(route_key: str) -> set[str]:
     k = f"review:{route_key}:removed"
     if k not in st.session_state:
         st.session_state[k] = set()
     val = st.session_state[k]
     if isinstance(val, list):
-        val = {int(x) for x in val}
+        val = {str(x) for x in val}
         st.session_state[k] = val
     return val
 
-def _save_removed(route_key: str, removed: set[int]):
+def _save_removed(route_key: str, removed: set[str]):
     # store as list for stable serialization
     st.session_state[f"review:{route_key}:removed"] = list(removed)
 
@@ -61,10 +61,15 @@ def _render_cards(route_key: str, rows: List[Tuple[str, str, str, str]]) -> tupl
     kept_count = 0
     removed_count = 0
 
-    # Each card is an isolated button so toggles don't interfere with each other.
+    # Each card is a small form so clicks don't interfere with each other.
+    # Use the list index as part of the stable key so that identical dotpoints
+    # (same subject/module/iq/text) can still be toggled independently. This
+    # prevents a toggle on one card from unexpectedly affecting another with
+    # the same content.
     for idx, item in enumerate(rows):
         s, m, iq, dp = item
-        is_removed = idx in removed
+        sk = stable_key_tuple((str(idx),) + item)
+        is_removed = (sk in removed)
         cls = _class(is_removed)
         pill = _pill(is_removed)
 
@@ -77,16 +82,16 @@ def _render_cards(route_key: str, rows: List[Tuple[str, str, str, str]]) -> tupl
 
             st.markdown(f'<div class="dp-text">{dp}</div>', unsafe_allow_html=True)
 
-            btn_key = f"btn:card:{route_key}:{idx}"
-            if st.button(_toggle_label(is_removed), key=btn_key, use_container_width=True):
-                if is_removed:
-                    removed.discard(idx)
-                else:
-                    removed.add(idx)
-                _save_removed(route_key, removed)
+            with st.form(key=f"frm:card:{route_key}:{idx}"):
+                if st.form_submit_button(_toggle_label(is_removed), use_container_width=True):
+                    if is_removed:
+                        removed.discard(sk)
+                    else:
+                        removed.add(sk)
+                    _save_removed(route_key, removed)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        if idx in removed:
+        if sk in removed:
             removed_count += 1
         else:
             kept_count += 1
@@ -121,7 +126,7 @@ def review_box(
             removed = _get_removed(route_key)
             kept_items = {
                 itm for idx, itm in enumerate(rows)
-                if idx not in removed
+                if stable_key_tuple((str(idx),) + itm) not in removed
             }
             st.session_state["sel_dotpoints"] = kept_items
             st.success("Selection updated.")
