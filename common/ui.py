@@ -43,8 +43,10 @@ def set_go(go=None):
     return go
 
 def get_go():
-    """Helper to retrieve the navigation function from session state."""
-    return st.session_state.get("_go")
+    """Return the navigation function, seeding a default if missing."""
+    if "_go" not in st.session_state:
+        return set_go()
+    return st.session_state["_go"]
 
 # ------------------------------
 # UI helpers
