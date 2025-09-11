@@ -9,7 +9,15 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
-from common.ui import go  # topbar, CSS, etc. are presumed in common/ui.py
+# ``go`` was previously imported directly from ``common.ui`` but that module now
+# exposes a ``set_go`` helper which initialises the navigation function and
+# stores it in ``st.session_state``.  Import and invoke ``set_go`` here to obtain
+# the default ``go`` implementation.
+from common.ui import set_go
+
+# Register the navigation function for use across modules and keep a local
+# reference for convenience.
+go = set_go()
 from homepage.homepage import page_home
 
 from selection.widgets import (
