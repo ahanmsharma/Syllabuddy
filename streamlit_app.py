@@ -6,6 +6,46 @@ import json
 import os
 from typing import Dict, List, Tuple
 
+# streamlit_app.py  (only the relevant diffs shown)
+
+# ...
+from review.review import page_srs_review, page_cram_review
+from review.how import page_cram_how        # <-- ADD THIS
+from fp.fp import page_weakness_report, page_fp_flow, ensure_fp_state
+# ...
+
+ROUTES = {
+    # Home
+    "home": page_home,
+
+    # Selection (CRAM)
+    "cram_subjects": page_cram_subjects,
+    "cram_modules":  page_cram_modules,
+    "cram_iqs":      page_cram_iqs,
+    "cram_dotpoints": page_cram_dotpoints,
+
+    # Selection (SRS)
+    "srs_subjects": page_srs_subjects,
+    "srs_modules":  page_srs_modules,
+    "srs_iqs":      page_srs_iqs,
+    "srs_dotpoints": page_srs_dotpoints,
+
+    # Review screens (unchanged)
+    "srs_review":  page_srs_review,
+    "cram_review": page_cram_review,
+
+    # NEW: How-to-review screen referenced by review/review.py
+    "cram_how":    page_cram_how,          # <-- ADD THIS
+
+    # AI suggestion/review
+    "ai_select": page_ai_select,
+    "ai_review": page_ai_review,
+
+    # FP engine (DnD cloze + specific→general)
+    "weakness_report": page_weakness_report,
+    "fp_flow":         page_fp_flow,
+}
+
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
