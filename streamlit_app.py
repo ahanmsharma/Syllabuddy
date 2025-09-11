@@ -9,10 +9,7 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
-<<<<<<< codex/fix-importerror-for-go-from-common.ui-1u7jbl
-=======
-<<<<<<< codex/fix-importerror-for-go-from-common.ui-avt0w7
->>>>>>> main
+
 # Navigation is provided via a ``go`` function stored in ``st.session_state``.
 # Use ``get_go`` to fetch (and lazily create) this function during bootstrap.
 from common.ui import get_go
@@ -22,21 +19,6 @@ go = None
 
 from homepage.homepage import page_home, page_select_subject_main
 from srs.srs import page_srs_menu
-<<<<<<< codex/fix-importerror-for-go-from-common.ui-1u7jbl
-=======
-=======
-# ``go`` was previously imported directly from ``common.ui`` but that module now
-# exposes a ``set_go`` helper which initialises the navigation function and
-# stores it in ``st.session_state``.  Import and invoke ``set_go`` here to obtain
-# the default ``go`` implementation.
-from common.ui import set_go
-
-# Register the navigation function for use across modules and keep a local
-# reference for convenience.
-go = set_go()
-from homepage.homepage import page_home
->>>>>>> main
->>>>>>> main
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
