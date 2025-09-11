@@ -9,8 +9,14 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
-from common.ui import go  # topbar, CSS, etc. are presumed in common/ui.py
-from homepage.homepage import page_home
+# ``go`` was previously imported directly from ``common.ui`` but that module now
+# exposes a ``set_go`` helper which seeds the navigation function into
+# ``st.session_state``.  Import it so we can initialise navigation lazily during
+# bootstrap.
+from common.ui import set_go
+
+from homepage.homepage import page_home, page_select_subject_main
+from srs.srs import page_srs_menu
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
@@ -22,6 +28,9 @@ from ai.ai import page_ai_select, page_ai_review
 
 # FP engine (DnD integrated)
 from fp.fp import page_weakness_report, page_fp_flow, ensure_fp_state
+
+# Global navigation function placeholder populated during bootstrap
+go = None
 
 
 # ---------------- Page config ----------------
@@ -94,6 +103,12 @@ def explode_syllabus(data: Dict) -> Tuple[
 
 # ---------------- Bootstrap shared state ----------------
 def ensure_core_state():
+    # Navigation handler
+    if "_go" not in st.session_state:
+        set_go()  # inject default go() into state
+    global go
+    go = st.session_state["_go"]
+
     # Route
     st.session_state.setdefault("route", "home")
 
@@ -103,7 +118,7 @@ def ensure_core_state():
     st.session_state.setdefault("focus_module", None)  # (s, m)
     st.session_state.setdefault("focus_iq", None)      # (s, m, iq)
 
-    # Some older pages may expect a callable in state; provide go for compatibility
+    # Some older pages may expect a callable in state; ensure it persists
     st.session_state.setdefault("_go", go)
 
     # Load syllabus once and fan out into fast-lookups used by selection pages
@@ -121,6 +136,8 @@ def ensure_core_state():
 ROUTES = {
     # Home
     "home": page_home,
+    "select_subject_main": page_select_subject_main,
+    "srs_menu": page_srs_menu,
 
     # Selection (CRAM)
     "cram_subjects": page_cram_subjects,
