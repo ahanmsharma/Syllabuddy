@@ -18,7 +18,6 @@ from common.ui import set_go
 # Register the navigation function for use across modules and keep a local
 # reference for convenience.
 go = set_go()
-from homepage.homepage import page_home
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
@@ -102,6 +101,12 @@ def explode_syllabus(data: Dict) -> Tuple[
 
 # ---------------- Bootstrap shared state ----------------
 def ensure_core_state():
+    # Navigation handler
+    if "_go" not in st.session_state:
+        set_go()  # inject default go() into state
+    global go
+    go = st.session_state["_go"]
+
     # Route
     st.session_state.setdefault("route", "home")
 
@@ -111,7 +116,7 @@ def ensure_core_state():
     st.session_state.setdefault("focus_module", None)  # (s, m)
     st.session_state.setdefault("focus_iq", None)      # (s, m, iq)
 
-    # Some older pages may expect a callable in state; provide go for compatibility
+    # Some older pages may expect a callable in state; ensure it persists
     st.session_state.setdefault("_go", go)
 
     # Load syllabus once and fan out into fast-lookups used by selection pages
@@ -129,6 +134,8 @@ def ensure_core_state():
 ROUTES = {
     # Home
     "home": page_home,
+    "select_subject_main": page_select_subject_main,
+    "srs_menu": page_srs_menu,
 
     # Selection (CRAM)
     "cram_subjects": page_cram_subjects,
