@@ -10,10 +10,14 @@ import streamlit as st
 
 # ---- Import shared UI + page modules ----
 # ``go`` was previously imported directly from ``common.ui`` but that module now
-# exposes a ``set_go`` helper which seeds the navigation function into
-# ``st.session_state``.  Import it so we can initialise navigation lazily during
-# bootstrap.
+# exposes a ``set_go`` helper which initialises the navigation function and
+# stores it in ``st.session_state``.  Import and invoke ``set_go`` here to obtain
+# the default ``go`` implementation.
 from common.ui import set_go
+
+# Register the navigation function for use across modules and keep a local
+# reference for convenience.
+go = set_go()
 
 from homepage.homepage import page_home, page_select_subject_main
 from srs.srs import page_srs_menu
@@ -28,9 +32,6 @@ from ai.ai import page_ai_select, page_ai_review
 
 # FP engine (DnD integrated)
 from fp.fp import page_weakness_report, page_fp_flow, ensure_fp_state
-
-# Global navigation function placeholder populated during bootstrap
-go = None
 
 
 # ---------------- Page config ----------------
