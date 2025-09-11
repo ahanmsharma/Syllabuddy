@@ -23,8 +23,12 @@ from selection.widgets import (
 from review.review import page_srs_review, page_cram_review
 from ai.ai import page_ai_select, page_ai_review
 
-# FP engine (DnD integrated)
-from fp.fp import page_weakness_report, page_fp_flow, ensure_fp_state
+# FP engine (DnD integrated) — NEW file below
+from fp.fp import (
+    ensure_fp_state,
+    page_fp_flow,           # main FP engine (starts with General FP Questions)
+    page_exam_mode_placeholder,  # simple placeholder page
+)
 
 
 # ---------------- Page config ----------------
@@ -112,8 +116,7 @@ def ensure_core_state():
 # ---------------- Cram "How to Review" ----------------
 def page_cram_how():
     """Page shown after Cram Review, routes into SR or FP flow."""
-    topbar = lambda title: st.title(title)  # minimal inline topbar
-    topbar("How to review")
+    st.title("How to review")
 
     mode = st.radio(
         "Choose order:",
@@ -126,9 +129,11 @@ def page_cram_how():
     with mid:
         if st.button("Proceed", type="primary", use_container_width=True):
             if mode.startswith("Prioritization"):
-                go("weakness_report")
+                # Start FP flow from the beginning (General FP Qs)
+                go("fp_flow")
             else:
-                go("srs_subjects")
+                # Clean entry point to SR hub (not review page)
+                go("srs_menu")
 
 
 # ---------------- Router ----------------
@@ -153,15 +158,15 @@ ROUTES = {
     # Review screens
     "srs_review":  page_srs_review,
     "cram_review": page_cram_review,
-    "cram_how":    page_cram_how,  # NEW route
+    "cram_how":    page_cram_how,  # wired from your unchanged review/review.py
 
     # AI suggestion/review
     "ai_select": page_ai_select,
     "ai_review": page_ai_review,
 
     # FP engine
-    "weakness_report": page_weakness_report,
     "fp_flow":         page_fp_flow,
+    "exam_mode":       page_exam_mode_placeholder,  # quick jump target
 }
 
 
