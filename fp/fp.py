@@ -1,356 +1,432 @@
 # fp/fp.py
+# Focused Practice engine:
+# General FP → Weakness report (general) → Cloze (general weakness) → Review → Weakness report (specific)
+# → FP (specific) → Cloze (specific) → loop specifics → next general → finish
 from __future__ import annotations
-import random, re, pathlib
-from typing import Dict, List, Tuple, Optional
+import os
+import pathlib
+import random
+import re
+from typing import List, Optional, Tuple
 
 import streamlit as st
-from common.ui import topbar, get_go
 import streamlit.components.v1 as components
 
-# ---------- Try to attach your existing DnD component ----------
-# Expected build path: <repo_root>/frontend/build
-# This file is <repo_root>/fp/fp.py → so go up one and into frontend/build
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_DND_BUILD = _REPO_ROOT / "frontend" / "build"
-if _DND_BUILD.exists():
-    _dnd_cloze_comp = components.declare_component("dnd_cloze", path=str(_DND_BUILD))
-else:
-    _dnd_cloze_comp = None  # will fall back to click-place UI
+# ------------- DnD Cloze Component (fallback if build not present) -------------
+BUILD_DIR = str(pathlib.Path(__file__).resolve().parent.parent / "frontend" / "build")
+_dnd_cloze = None
+if os.path.exists(BUILD_DIR):
+    try:
+        _dnd_cloze = components.declare_component("dnd_cloze", path=BUILD_DIR)
+    except Exception:
+        _dnd_cloze = None  # fall back to text inputs
 
 
-# ---------- FP engine state ----------
+def _render_dnd_cloze(segments: List[str], answers: List[str], bank: List[str],
+                      initial_fills: Optional[List[Optional[str]]] = None) -> Tuple[List[Optional[str]], List[bool]]:
+    """
+    Renders the DnD cloze if available; else falls back to text inputs.
+    Returns (fills, flags) where fills are the user's choices; flags True/False per blank.
+    """
+    fills: List[Optional[str]] = list(initial_fills or [None] * len(answers))
+
+    if _dnd_cloze is not None:
+        payload = _dnd_cloze(
+            segments=segments,
+            answers=answers,
+            bank=bank,
+            initial_fills=fills,
+            key=f"dnd_{st.session_state.get('fp_ptr', 0)}_{len(answers)}"
+        )
+        # payload is expected to be {"fills":[...], "correct":[...]} per your working component
+        if isinstance(payload, dict):
+            fills = payload.get("fills", fills)
+            flags = payload.get("correct", [False] * len(answers))
+        else:
+            flags = [False] * len(answers)
+        return fills, flags
+
+    # ---- Fallback (typed blanks) ----
+    st.info("Drag-and-drop cloze component not found — using typed blanks as fallback.")
+    new_fills = list(fills)
+    st.write("")  # spacing
+    st.markdown('<div class="cloze-wrap">', unsafe_allow_html=True)
+    for i in range(len(answers)):
+        st.write(segments[i], unsafe_allow_html=True)
+        new_fills[i] = st.text_input(f"Blank {i+1}", value=new_fills[i] or "", key=f"txt_blank_{i}")
+    st.write(segments[-1], unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    flags = [(a.strip().lower() == (new_fills[i] or "").strip().lower()) for i, a in enumerate(answers)]
+    return new_fills, flags
+
+
+# ------------------------- FP State & Helpers -------------------------
 def ensure_fp_state():
+    """Create all FP-related state keys if missing."""
     ss = st.session_state
-    ss.setdefault("fp_stage", "report")   # report, cloze, post_cloze, followups, done
-    ss.setdefault("fp_reports", {"weaknesses":"", "strengths":""})
-    ss.setdefault("fp_weak_list", [])
-    ss.setdefault("fp_queue", [])         # [{"name": str, "phase": "specific"|"general"}]
-    ss.setdefault("fp_ptr", 0)
-    ss.setdefault("fp_phase_attempts", 0)
+    ss.setdefault("fp_stage", "fp_general_q")  # entry stage
+    ss.setdefault("fp_ptr", 0)                 # general weakness pointer
+    ss.setdefault("fp_attempts", 0)
+    ss.setdefault("fp_direct_exam", False)
 
-    # cloze state
-    ss.setdefault("fp_current_cloze", None)
-    ss.setdefault("fp_cloze_specificity", 0)  # 0 general, 1 specific
-    ss.setdefault("fp_segs", None)
-    ss.setdefault("fp_answers", None)
-    ss.setdefault("fp_bank", None)
-    ss.setdefault("fp_fills", None)       # List[Optional[str]]
-    ss.setdefault("fp_flags", None)       # List[bool]
-    ss.setdefault("fp_last_score", None)  # (correct,total)
+    # Dotpoint context (use the first selected if available)
+    ss.setdefault("active_dotpoint", None)
+    if ss["active_dotpoint"] is None:
+        sel = list(ss.get("sel_dotpoints", []))
+        ss["active_dotpoint"] = sel[0] if sel else ("Biology", "Module 6: Genetic Change", "IQ1: Mutations", "Describe point vs frameshift mutations")
+
+    # General weaknesses list & specific queues per weakness
+    ss.setdefault("fp_weak_list", [])             # ["osmosis", "equilibrium Kc", ...] (general)
+    ss.setdefault("fp_specific_map", {})          # { "osmosis": ["reverse osmosis", ...], ... }
+    ss.setdefault("fp_cur_general", None)         # current general weakness name
+    ss.setdefault("fp_specific_queue", [])        # specifics for current general
+    ss.setdefault("fp_cur_specific", None)        # current specific weakness name
+
+    # Cloze scratch
+    ss.setdefault("fp_cloze_text", None)
+    ss.setdefault("fp_cloze_segments", None)
+    ss.setdefault("fp_cloze_answers", None)
+    ss.setdefault("fp_cloze_fills", None)
+    ss.setdefault("fp_cloze_flags", None)
+
+    # Ratings
+    ss.setdefault("fp_last_rating", None)
 
 
-def _current_target() -> Tuple[Optional[str], Optional[str]]:
-    ss = st.session_state
-    if 0 <= ss.get("fp_ptr",0) < len(ss.get("fp_queue",[])):
-        item = ss["fp_queue"][ss["fp_ptr"]]
-        return item["name"], item["phase"]
-    return None, None
+def _fp_title():
+    s, m, iq, dp = st.session_state.get("active_dotpoint", ("Subject", "Module", "IQ", "Dotpoint"))
+    return f"{s} → {m} → {iq}", dp
 
 
-# ---------- Cloze generation ----------
-def _placeholder_cloze(weakness: str, specificity: int) -> str:
-    w = weakness or "the topic"
-    if specificity == 1:
-        bank = [
-            f"{w} requires [stepwise] [reasoning] from [first principles].",
-            f"In {w}, common pitfalls include [confusing] [definitions] and [examples].",
-            f"To approach {w}, first [define] the [system], then [isolate] variables."
-        ]
+def _general_fp_questions(dp_text: str) -> List[str]:
+    return [
+        f"Explain the first principles behind: **{dp_text}**. Start from definitions, then laws/relationships.",
+        "List the key variables and how they interact. Provide a very simple, concrete example.",
+    ]
+
+
+def _specific_fp_questions(topic: str) -> List[str]:
+    return [
+        f"In your own words, explain **{topic}** and why learners commonly struggle with it.",
+        f"Give two short examples for **{topic}**, and state one pitfall + a fix.",
+    ]
+
+
+def _cloze_from_weakness(weak: str, specific: bool) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Build a simple bracketed cloze and return (segments, answers, bank).
+    """
+    if not weak:
+        weak = "this topic"
+
+    if specific:
+        s = f"{weak} often requires [stepwise] [reasoning] using [definitions] and [laws]. Start by [identifying] variables, then [relate] them."
     else:
-        bank = [
-            f"{w} focuses on [understanding] [core] [ideas].",
-            f"Good practice for {w} is [clarity], [accuracy], and [consistency].",
-            f"A routine for {w} is [recall], [apply], then [reflect]."
-        ]
-    return random.choice(bank)
+        s = f"{weak} is about [understanding] [core] [ideas]. A useful strategy is [recall], [apply], then [reflect]."
 
-
-def _split_cloze(text: str) -> Tuple[List[str], List[str]]:
-    parts = re.split(r"\[([^\]]+)\]", text)
+    parts = re.split(r"\[([^\]]+)\]", s)  # seg0, ans0, seg1, ans1, seg2, ...
     segs, ans = [], []
-    for i,p in enumerate(parts):
+    for i, p in enumerate(parts):
         if i % 2 == 0:
             segs.append(p)
         else:
             ans.append(p)
-    if len(segs) == len(ans):
+
+    if len(segs) == len(ans):  # ensure segs = answers+1
         segs.append("")
-    return segs, ans
+
+    # bank = answers + a couple distractors
+    distractors = ["assumptions", "units", "notation", "context", "estimate"]
+    bank = list(dict.fromkeys(ans + random.sample(distractors, k=min(3, len(distractors)))))
+
+    return segs, ans, bank
 
 
-# ---------- UI: your DnD component (preferred) OR click-to-place fallback ----------
-def _render_cloze_with_dnd(segs: List[str], answers: List[str], fills: List[Optional[str]], keyp: str) -> List[Optional[str]]:
-    """
-    Calls your compiled component at frontend/build.
-    Contract (flexible to your previous version):
-      - We pass: segments, answers, initial_bank, initial_fills
-      - We expect back a dict with 'fills' (List[str|None]). If None/empty, keep old fills.
-    """
-    placed = [f if (f is None or isinstance(f, str)) else str(f) for f in fills]
-    # initial bank = answers (shuffled)
-    bank = answers[:]
-    random.shuffle(bank)
-
-    result = _dnd_cloze_comp(
-        segments=segs,
-        answers=answers,
-        initial_bank=bank,
-        initial_fills=placed,
-        key=f"dnd_{keyp}",
-        default=None,
-    )
-    if isinstance(result, dict) and "fills" in result and isinstance(result["fills"], list):
-        new_fills = []
-        for x in result["fills"]:
-            if x in (None, "", " "):
-                new_fills.append(None)
-            else:
-                new_fills.append(str(x))
-        return new_fills
-    # defensive: keep prior fills if component returns nothing
-    return fills
+# ------------------------- Pages -------------------------
+def page_exam_mode_placeholder():
+    st.title("Exam Mode (placeholder)")
+    st.write("This will generate HSC-style questions, show a sample answer, and let you tag weaknesses for targeted loops.")
+    if st.button("Back to Home"):
+        st.session_state["route"] = "home"
+        st.rerun()
 
 
-def _render_cloze_click_place(segs: List[str], answers: List[str], fills: List[Optional[str]], keyp: str) -> List[Optional[str]]:
-    """
-    Fallback if the DnD component isn't available.
-    Click a bank chip, then click a blank. Click a filled blank to clear.
-    """
-    st.markdown("""
-    <style>
-    .fp-sent { font-size:1.05rem; line-height:1.7; }
-    .chip { display:inline-block; margin:6px 6px 0 0; padding:6px 10px;
-            border-radius:999px; border:1px solid var(--border, #d1d5db); background:#fff; }
-    .chip.used { opacity:.45; }
-    .blank { display:inline-block; min-width:8ch; padding:2px 8px; margin:0 4px;
-             border-bottom:2px solid #94a3b8; border-radius:6px; background:#f8fafc; cursor:pointer; }
-    @media (prefers-color-scheme: dark){
-      .chip{ background:#111827; border-color:#334155; }
-      .blank{ background:#0b1220; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    state_key = f"{keyp}:pending_word"
-    if state_key not in st.session_state:
-        st.session_state[state_key] = None
-
-    def choose_word(w:str):
-        st.session_state[state_key] = w
-
-    def place_word(i:int):
-        pending = st.session_state.get(state_key)
-        if pending:
-            fills[i] = pending
-            st.session_state[state_key] = None
-
-    def clear_word(i:int):
-        fills[i] = None
-
-    # sentence
-    st.markdown('<div class="fp-sent">', unsafe_allow_html=True)
-    for i in range(len(answers)):
-        st.write(segs[i], unsafe_allow_html=True)
-        label = fills[i] if fills[i] else "________"
-        if st.button(label, key=f"{keyp}:blank:{i}", help="Click to place / clear"):
-            if fills[i] is None:
-                place_word(i)
-            else:
-                clear_word(i)
-    st.write(segs[-1], unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # bank
-    st.caption("Word bank")
-    placed = set([f for f in fills if f])
-    available = [w for w in answers if w not in placed]
-    bank_cols = st.columns(max(1, min(4, len(available) or 1)))
-    for idx, w in enumerate(available):
-        with bank_cols[idx % len(bank_cols)]:
-            if st.button(w, key=f"{keyp}:bank:{idx}"):
-                choose_word(w)
-
-    pending = st.session_state.get(state_key)
-    if pending:
-        st.info(f"Selected word: **{pending}** — now click a blank to place it.")
-
-    return fills
-
-
-def _render_cloze(segs: List[str], answers: List[str], fills: List[Optional[str]], keyp: str) -> List[Optional[str]]:
-    if _dnd_cloze_comp is not None:
-        return _render_cloze_with_dnd(segs, answers, fills, keyp)
-    return _render_cloze_click_place(segs, answers, fills, keyp)
-
-
-# ---------- Public pages ----------
-def page_weakness_report():
-    ensure_fp_state()
-    go = get_go()
-    topbar("AI selection — enter weaknesses", back_to="select_subject_main")
-    st.write("Enter weaknesses (semicolon-separated). The flow will cover **specific** then **general** for each weakness. "
-             "If you add **specific** sub-weaknesses later, they run before returning to the general item.")
-
-    wk = st.text_area("Weaknesses", key="fp_wk_report", height=150,
-                      placeholder="e.g., equilibrium constants; vectors; cell transport")
-    stg = st.text_area("Strengths (optional)", key="fp_stg_report", height=100,
-                      placeholder="e.g., definitions; diagrams")
-
-    if st.button("Continue", type="primary", use_container_width=True):
-        ss = st.session_state
-        ss["fp_weak_list"] = [w.strip() for w in (wk or "").split(";") if w.strip()][:5]
-        ss["fp_reports"]["strengths"] = stg or ""
-        queue = []
-        for w in ss["fp_weak_list"]:
-            queue.append({"name": w, "phase": "specific"})
-            queue.append({"name": w, "phase": "general"})
-        ss["fp_queue"] = queue
-        ss["fp_ptr"] = 0
-        ss["fp_phase_attempts"] = 0
-
-        # reset cloze state
-        ss["fp_current_cloze"] = None
-        ss["fp_cloze_specificity"] = 1 if queue else 0
-        ss["fp_segs"] = None
-        ss["fp_answers"] = None
-        ss["fp_bank"] = None
-        ss["fp_fills"] = None
-        ss["fp_flags"] = None
-        ss["fp_last_score"] = None
-
-        ss["fp_stage"] = "cloze" if queue else "done"
-        go("fp_flow")
+def _btn(label: str, key: Optional[str] = None, primary: bool = False):
+    return st.button(label, key=key, type=("primary" if primary else "secondary"), use_container_width=True)
 
 
 def page_fp_flow():
+    """
+    Main FP flow. Stages:
+      - fp_general_q  -> general first-principles questions (+ optional skip to Exam mode)
+      - weak_general  -> user lists general weaknesses (semicolon)
+      - cloze_general -> cloze for current general weakness
+      - cloze_review  -> rating + (optional) add specifics
+      - weak_specific -> user lists specifics for current general weakness
+      - fp_specific   -> first-principles questions on specific weakness
+      - cloze_specific-> cloze for specific weakness; then back to weak_specific for next specific
+      - fp_more       -> more general FP if needed, then decision
+      - decision      -> next dotpoint / quit / exam mode
+    """
     ensure_fp_state()
-    go = get_go()
     ss = st.session_state
+    header, dp_text = _fp_title()
 
-    topbar("Focused Practice (Specific → General)", back_to="weakness_report")
+    # ----- fp_general_q -----
+    if ss["fp_stage"] == "fp_general_q":
+        st.title("First-Principles (General)")
+        st.caption(header)
+        q = _general_fp_questions(dp_text)
 
-    if ss["fp_stage"] == "done":
-        st.success("Weakness cycle complete. (You can return Home or add more weaknesses.)")
-        if st.button("Add more weaknesses"):
-            go("weakness_report")
-        return
+        with st.form(key="fp_general_form"):
+            a1 = st.text_area("Q1", q[0], height=160)
+            a2 = st.text_area("Q2", q[1], height=160)
+            col = st.columns([1,1,1])
+            with col[0]:
+                direct_exam = st.checkbox("Skip to Exam Mode (optional)", value=False)
+            with col[1]:
+                rating = st.slider("Rate your current understanding (0–10)", 0, 10, 6)
+            submitted = st.form_submit_button("Continue", type="primary")
 
-    # ---------- CLOZE ----------
-    if ss["fp_stage"] == "cloze":
-        wname, phase = _current_target()
-        if wname is None:
-            ss["fp_stage"] = "done"
-            go("fp_flow")
-            return
-
-        ss["fp_cloze_specificity"] = 1 if phase == "specific" else 0
-
-        if not ss["fp_current_cloze"]:
-            text = _placeholder_cloze(wname, ss["fp_cloze_specificity"])
-            segs, ans = _split_cloze(text)
-            bank = ans[:]
-            random.shuffle(bank)
-            ss["fp_current_cloze"] = text
-            ss["fp_segs"] = segs
-            ss["fp_answers"] = ans
-            ss["fp_bank"] = bank
-            ss["fp_fills"] = [None] * len(ans)
-            ss["fp_flags"] = None
-
-        st.markdown(f"**Targeting:** `{wname}` — _{phase}_")
-
-        # --- DnD (or fallback) ---
-        ss["fp_fills"] = _render_cloze(ss["fp_segs"], ss["fp_answers"], ss["fp_fills"],
-                                       keyp=f"fp:{ss['fp_ptr']}:{phase}")
-
-        # Submit
-        if st.button("Submit", type="primary", use_container_width=True, key=f"fp_submit_{ss['fp_ptr']}_{phase}"):
-            got = [(x or "") for x in ss["fp_fills"]]
-            flags = [a.strip().lower() == g.strip().lower() for a, g in zip(ss["fp_answers"], got)]
-            ss["fp_flags"] = flags
-            st.rerun()
-
-        # Feedback + Continue
-        if ss["fp_flags"] is not None:
-            c = sum(ss["fp_flags"])
-            total = len(ss["fp_flags"]) or 1
-            ok = (c == total)
-            st.info(f"Cloze result: **{c}/{total}** — {'🟢 Correct' if ok else '🟡 Mixed'}")
-            if st.button("Continue", use_container_width=True, key=f"fp_cont_{ss['fp_ptr']}_{phase}"):
-                ss["fp_last_score"] = (c, total)
-                ss["fp_stage"] = "post_cloze"
+        if submitted:
+            ss["fp_direct_exam"] = direct_exam
+            ss["fp_last_rating"] = rating
+            if direct_exam:
+                ss["route"] = "exam_mode"
+                st.rerun()
+            else:
+                ss["fp_stage"] = "weak_general"
                 st.rerun()
         return
 
-    # ---------- POST-CLOZE ----------
-    if ss["fp_stage"] == "post_cloze":
-        wname, phase = _current_target()
-        c, t = ss["fp_last_score"] if ss["fp_last_score"] else (0,0)
-        st.info(f"Cloze score: {c}/{t} — Target: {wname} / {phase}")
+    # ----- weak_general -----
+    if ss["fp_stage"] == "weak_general":
+        st.title("Weakness Report — General")
+        st.caption("List up to five general weaknesses (semicolon-separated).")
+        defaults = "; ".join(ss.get("fp_weak_list", []))
+        text = st.text_area("General weaknesses", value=defaults, height=120,
+                            placeholder="e.g., osmosis; equilibrium Kc; vectors")
 
-        colA, colB = st.columns([1,1], gap="large")
+        proceed = _btn("Continue", primary=True)
+        if proceed:
+            ss["fp_weak_list"] = [w.strip() for w in (text or "").split(";") if w.strip()][:5]
+            ss["fp_ptr"] = 0
+            ss["fp_cur_general"] = ss["fp_weak_list"][0] if ss["fp_weak_list"] else None
+            # prep a cloze for the first general weakness
+            ss["fp_cloze_text"] = None
+            ss["fp_stage"] = "cloze_general" if ss["fp_cur_general"] else "fp_more"
+            st.rerun()
+        return
+
+    # ----- cloze_general -----
+    if ss["fp_stage"] == "cloze_general":
+        st.title("Cloze — General Weakness")
+        st.caption(f"Target: **{ss['fp_cur_general']}**")
+
+        if ss["fp_cloze_text"] is None:
+            segs, ans, bank = _cloze_from_weakness(ss["fp_cur_general"], specific=False)
+            ss["fp_cloze_segments"] = segs
+            ss["fp_cloze_answers"] = ans
+            ss["fp_cloze_fills"] = [None] * len(ans)
+            ss["fp_cloze_text"] = "ready"
+            ss["fp_cloze_flags"] = None
+
+        fills, flags = _render_dnd_cloze(
+            ss["fp_cloze_segments"], ss["fp_cloze_answers"], bank=[],
+            initial_fills=ss["fp_cloze_fills"]
+        )
+        ss["fp_cloze_fills"] = fills
+        ss["fp_cloze_flags"] = flags
+
+        col = st.columns([1,1,1])
+        if col[1].button("Submit Cloze", type="primary", use_container_width=True):
+            st.experimental_set_query_params()  # nudge rerender without callback rerun
+            ss["fp_stage"] = "cloze_review"
+            st.rerun()
+        return
+
+    # ----- cloze_review -----
+    if ss["fp_stage"] == "cloze_review":
+        st.title("Cloze Review")
+        flags = ss.get("fp_cloze_flags") or []
+        correct = sum(1 for f in flags if f)
+        total = len(flags)
+        st.info(f"Score: {correct}/{total}")
+
+        colA, colB = st.columns([1,1])
         with colA:
-            rating = st.slider("Rate your understanding (0–10)", 0, 10, 6,
-                               key=f"fp_rate_{ss['fp_ptr']}_{phase}")
+            rating = st.slider("Rate your understanding now (0–10)", 0, 10, 7, key=f"clz_rate_{ss['fp_ptr']}")
         with colB:
-            # Specific sub-weaknesses here jump ahead of current general
-            more_w = st.text_input(
-                "Add weaknesses (semicolon-separated)",
-                key=f"fp_more_{ss['fp_ptr']}_{phase}",
-                placeholder="e.g., boundary conditions; term definitions"
-            )
+            add_specs = st.text_input("Add **specific** weaknesses (semicolon)", key=f"clz_specs_{ss['fp_ptr']}",
+                                      placeholder="e.g., reverse osmosis; boundary conditions")
 
-        if st.button("Continue", use_container_width=True, key=f"fp_next_{ss['fp_ptr']}_{phase}"):
-            # Insert sub-weaknesses **right after current item** (specific then general)
-            insert_at = ss["fp_ptr"] + 1
-            add_list = [w.strip() for w in (more_w or "").split(";") if w.strip()]
-            for w in reversed(add_list):  # reversed → first entered appears first after current
-                if not any(item["name"] == w for item in ss["fp_queue"]):
-                    ss["fp_queue"].insert(insert_at, {"name": w, "phase": "general"})
-                    ss["fp_queue"].insert(insert_at, {"name": w, "phase": "specific"})
-
-            if rating <= 6:
-                # retry same item with fresh cloze
-                ss["fp_phase_attempts"] += 1
-                ss["fp_current_cloze"] = None
-                ss["fp_segs"] = None
-                ss["fp_answers"] = None
-                ss["fp_bank"] = None
-                ss["fp_fills"] = None
-                ss["fp_flags"] = None
-                ss["fp_stage"] = "cloze"
+        col = st.columns([1,1,1])
+        if col[1].button("Continue"):
+            # store specifics into map
+            specs = [w.strip() for w in (add_specs or "").split(";") if w.strip()]
+            cur = ss["fp_cur_general"]
+            if specs:
+                m = ss.get("fp_specific_map", {})
+                m.setdefault(cur, [])
+                # de-dup
+                for s in specs:
+                    if s not in m[cur]:
+                        m[cur].append(s)
+                ss["fp_specific_map"] = m
+                ss["fp_specific_queue"] = m[cur][:]
+                ss["fp_cur_specific"] = ss["fp_specific_queue"].pop(0)
+                ss["fp_stage"] = "weak_specific"
             else:
-                ss["fp_phase_attempts"] = 0
-                ss["fp_stage"] = "followups"
+                # no specifics, proceed to more general FP or next general later
+                ss["fp_last_rating"] = rating
+                ss["fp_stage"] = "fp_more"
             st.rerun()
         return
 
-    # ---------- FOLLOW-UPS ----------
-    if ss["fp_stage"] == "followups":
-        wname, phase = _current_target()
-        if wname is None:
-            ss["fp_stage"] = "done"
-            go("fp_flow")
-            return
+    # ----- weak_specific -----
+    if ss["fp_stage"] == "weak_specific":
+        st.title("Weakness Report — Specific")
+        cur = ss["fp_cur_general"]
+        st.caption(f"General: **{cur}** — Add/confirm specifics (semicolon-separated).")
+        existing = ss.get("fp_specific_map", {}).get(cur, [])
+        defaults = "; ".join(existing)
+        text = st.text_input("Specific weaknesses", value=defaults,
+                             placeholder="e.g., reverse osmosis; diffusion vs facilitated diffusion")
 
-        st.markdown(f"**Follow-up first-principles questions for:** _{wname} / {phase}_")
-        q1 = f"Explain {wname} in your own words, then give a simple example."
-        q2 = f"List two common mistakes in {wname} and how to avoid them."
+        if _btn("Continue", primary=True):
+            specs = [w.strip() for w in (text or "").split(";") if w.strip()]
+            m = ss.get("fp_specific_map", {})
+            m[cur] = specs[:]
+            ss["fp_specific_map"] = m
+            ss["fp_specific_queue"] = specs[:]
+            ss["fp_cur_specific"] = ss["fp_specific_queue"].pop(0) if ss["fp_specific_queue"] else None
+            ss["fp_stage"] = "fp_specific" if ss["fp_cur_specific"] else "fp_more"
+            st.rerun()
+        return
 
-        with st.form(key=f"fp_follow_{ss['fp_ptr']}_{phase}"):
-            a1 = st.text_area("Q1: " + q1, height=160)
-            a2 = st.text_area("Q2: " + q2, height=160)
-            submitted = st.form_submit_button("Next")
+    # ----- fp_specific -----
+    if ss["fp_stage"] == "fp_specific":
+        cur_gen = ss["fp_cur_general"]
+        cur_spec = ss["fp_cur_specific"]
+        st.title("First-Principles (Specific)")
+        st.caption(f"Target: **{cur_gen}** / **{cur_spec}**")
+        q = _specific_fp_questions(cur_spec)
+
+        with st.form(key=f"fp_spec_form_{cur_spec}"):
+            a1 = st.text_area("Q1", q[0], height=150)
+            a2 = st.text_area("Q2", q[1], height=150)
+            rating = st.slider("Rate your understanding (0–10)", 0, 10, 7)
+            submitted = st.form_submit_button("Continue", type="primary")
+
         if submitted:
-            # advance pointer and reset cloze for next phase/item
-            ss["fp_ptr"] += 1
-            ss["fp_current_cloze"] = None
-            ss["fp_segs"] = None
-            ss["fp_answers"] = None
-            ss["fp_bank"] = None
-            ss["fp_fills"] = None
-            ss["fp_flags"] = None
-            ss["fp_cloze_specificity"] = 0
-            ss["fp_stage"] = "cloze" if ss["fp_ptr"] < len(ss["fp_queue"]) else "done"
+            ss["fp_last_rating"] = rating
+            # after specific FP, do a specific cloze
+            segs, ans, bank = _cloze_from_weakness(cur_spec, specific=True)
+            ss["fp_cloze_segments"] = segs
+            ss["fp_cloze_answers"] = ans
+            ss["fp_cloze_fills"] = [None] * len(ans)
+            ss["fp_cloze_flags"] = None
+            ss["fp_stage"] = "cloze_specific"
             st.rerun()
         return
+
+    # ----- cloze_specific -----
+    if ss["fp_stage"] == "cloze_specific":
+        cur_spec = ss["fp_cur_specific"]
+        st.title("Cloze — Specific")
+        st.caption(f"Specific target: **{cur_spec}**")
+
+        fills, flags = _render_dnd_cloze(
+            st.session_state["fp_cloze_segments"],
+            st.session_state["fp_cloze_answers"],
+            bank=[],
+            initial_fills=st.session_state["fp_cloze_fills"]
+        )
+        st.session_state["fp_cloze_fills"] = fills
+        st.session_state["fp_cloze_flags"] = flags
+
+        col = st.columns([1,1,1])
+        if col[1].button("Submit Cloze", type="primary", use_container_width=True):
+            # proceed back to weak_specific to pull next specific or advance to general
+            if st.session_state["fp_specific_queue"]:
+                st.session_state["fp_cur_specific"] = st.session_state["fp_specific_queue"].pop(0)
+                st.session_state["fp_stage"] = "fp_specific"
+            else:
+                # done with specifics → continue general flow
+                st.session_state["fp_stage"] = "fp_more"
+            st.rerun()
+        return
+
+    # ----- fp_more -----
+    if ss["fp_stage"] == "fp_more":
+        st.title("More First-Principles (General)")
+        st.caption("If you still feel shaky, answer a couple more to consolidate.")
+        q = [
+            "State two ‘gotchas’ in this area and how to avoid them.",
+            "Write a one-minute explanation for a friend."
+        ]
+        with st.form(key="fp_more_form"):
+            a1 = st.text_area("Q1", q[0], height=140)
+            a2 = st.text_area("Q2", q[1], height=140)
+            rating = st.slider("Rate your understanding (0–10)", 0, 10, 8)
+            submitted = st.form_submit_button("Continue", type="primary")
+
+        if submitted:
+            ss["fp_last_rating"] = rating
+            # Move to next general weakness if any, else decision page
+            if ss["fp_ptr"] < len(ss["fp_weak_list"]) - 1:
+                ss["fp_ptr"] += 1
+                ss["fp_cur_general"] = ss["fp_weak_list"][ss["fp_ptr"]]
+                ss["fp_cloze_text"] = None
+                ss["fp_stage"] = "cloze_general"
+            else:
+                ss["fp_stage"] = "decision"
+            st.rerun()
+        return
+
+    # ----- decision -----
+    if ss["fp_stage"] == "decision":
+        st.title("What next?")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Next dotpoint", use_container_width=True):
+                # Rotate to next selected dotpoint (MVP)
+                sel = list(st.session_state.get("sel_dotpoints", []))
+                if sel:
+                    try:
+                        i = sel.index(st.session_state["active_dotpoint"])
+                        st.session_state["active_dotpoint"] = sel[(i + 1) % len(sel)]
+                    except Exception:
+                        st.session_state["active_dotpoint"] = sel[0]
+                # Reset FP state for the new dotpoint
+                _reset_for_new_dotpoint()
+                st.rerun()
+        with c2:
+            if st.button("Exam mode", use_container_width=True):
+                st.session_state["route"] = "exam_mode"
+                st.rerun()
+        with c3:
+            if st.button("Quit", use_container_width=True):
+                st.session_state["route"] = "home"
+                st.rerun()
+        return
+
+
+def _reset_for_new_dotpoint():
+    ss = st.session_state
+    ss["fp_stage"] = "fp_general_q"
+    ss["fp_ptr"] = 0
+    ss["fp_attempts"] = 0
+    ss["fp_direct_exam"] = False
+    ss["fp_weak_list"] = []
+    ss["fp_specific_map"] = {}
+    ss["fp_cur_general"] = None
+    ss["fp_specific_queue"] = []
+    ss["fp_cur_specific"] = None
+    ss["fp_cloze_text"] = None
+    ss["fp_cloze_segments"] = None
+    ss["fp_cloze_answers"] = None
+    ss["fp_cloze_fills"] = None
+    ss["fp_cloze_flags"] = None
+    ss["fp_last_rating"] = None
