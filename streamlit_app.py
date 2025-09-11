@@ -18,7 +18,6 @@ from common.ui import set_go
 # Register the navigation function for use across modules and keep a local
 # reference for convenience.
 go = set_go()
-from homepage.homepage import page_home
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
@@ -129,6 +128,8 @@ def ensure_core_state():
 ROUTES = {
     # Home
     "home": page_home,
+    "select_subject_main": page_select_subject_main,
+    "srs_menu": page_srs_menu,
 
     # Selection (CRAM)
     "cram_subjects": page_cram_subjects,
