@@ -9,12 +9,13 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
+
 # Navigation is provided via a ``go`` function stored in ``st.session_state``.
-# Fetching it here seeds a default implementation on first import and keeps a
-# convenient module-level alias.
+# Use ``get_go`` to fetch (and lazily create) this function during bootstrap.
 from common.ui import get_go
 
-go = get_go()
+# Global reference for convenience; initialised in ``ensure_core_state``.
+go = None
 
 from homepage.homepage import page_home, page_select_subject_main
 from srs.srs import page_srs_menu
@@ -101,6 +102,10 @@ def explode_syllabus(data: Dict) -> Tuple[
 
 # ---------------- Bootstrap shared state ----------------
 def ensure_core_state():
+    # Navigation handler
+    global go
+    go = get_go()  # ensure ``_go`` exists and keep a local reference
+
     # Route
     st.session_state.setdefault("route", "home")
 
