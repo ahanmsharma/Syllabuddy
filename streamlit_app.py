@@ -9,8 +9,15 @@ from typing import Dict, List, Tuple
 import streamlit as st
 
 # ---- Import shared UI + page modules ----
-from common.ui import go  # topbar, CSS, etc. are presumed in common/ui.py
-from homepage.homepage import page_home
+# Navigation is provided via a ``go`` function stored in ``st.session_state``.
+# Fetching it here seeds a default implementation on first import and keeps a
+# convenient module-level alias.
+from common.ui import get_go
+
+go = get_go()
+
+from homepage.homepage import page_home, page_select_subject_main
+from srs.srs import page_srs_menu
 
 from selection.widgets import (
     page_cram_subjects, page_cram_modules, page_cram_iqs, page_cram_dotpoints,
@@ -103,9 +110,6 @@ def ensure_core_state():
     st.session_state.setdefault("focus_module", None)  # (s, m)
     st.session_state.setdefault("focus_iq", None)      # (s, m, iq)
 
-    # Some older pages may expect a callable in state; provide go for compatibility
-    st.session_state.setdefault("_go", go)
-
     # Load syllabus once and fan out into fast-lookups used by selection pages
     if "_SYL" not in st.session_state:
         data = load_syllabus()
@@ -121,6 +125,8 @@ def ensure_core_state():
 ROUTES = {
     # Home
     "home": page_home,
+    "select_subject_main": page_select_subject_main,
+    "srs_menu": page_srs_menu,
 
     # Selection (CRAM)
     "cram_subjects": page_cram_subjects,
