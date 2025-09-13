@@ -2,18 +2,20 @@ from typing import List, Tuple
 import streamlit as st
 from common.ui import topbar, get_go, stable_key_tuple
 
-# Removed set stored deterministically (no random keys)
+# Removed key set stored deterministically (no random keys)
 def _get_removed(route_key: str) -> set[str]:
     k = f"review:{route_key}:removed"
     if k not in st.session_state:
         st.session_state[k] = set()
-    # ensure set type (may be serialized)
-    if isinstance(st.session_state[k], list):
-        st.session_state[k] = set(st.session_state[k])
-    return st.session_state[k]
+    val = st.session_state[k]
+    if isinstance(val, list):
+        val = {str(x) for x in val}
+        st.session_state[k] = val
+    return val
 
 def _save_removed(route_key: str, removed: set[str]):
-    st.session_state[f"review:{route_key}:removed"] = set(removed)
+    # store as list for stable serialization
+    st.session_state[f"review:{route_key}:removed"] = list(removed)
 
 # theme-aware CSS
 REVIEW_CSS = """
@@ -54,15 +56,12 @@ def _class(is_removed: bool) -> str:
 def _toggle_label(is_removed: bool) -> str:
     return "🔁 Mark Kept" if is_removed else "🔁 Mark Removed"
 
-def _render_cards(route_key: str, rows: List[Tuple[str,str,str,str]]) -> tuple[int,int]:
+def _render_cards(route_key: str, rows: List[Tuple[str, str, str, str]]) -> tuple[int, int]:
     removed = _get_removed(route_key)
     kept_count = 0
     removed_count = 0
 
     # Each card is a small form so clicks don't interfere with each other.
-    #
-    # Use the list index as part of the stable key so that identical dotpoints
-    # (same subject/module/iq/text) can still be toggled independently.  This
     # prevents a toggle on one card from unexpectedly affecting another with
     # the same content.
     for idx, item in enumerate(rows):
@@ -81,9 +80,8 @@ def _render_cards(route_key: str, rows: List[Tuple[str,str,str,str]]) -> tuple[i
 
             st.markdown(f'<div class="dp-text">{dp}</div>', unsafe_allow_html=True)
 
-            with st.form(key=f"form:card:{route_key}:{sk}"):
-                submitted = st.form_submit_button(_toggle_label(is_removed), use_container_width=True)
-                if submitted:
+            with st.form(key=f"frm:card:{route_key}:{idx}"):
+                if st.form_submit_button(_toggle_label(is_removed), use_container_width=True):
                     if is_removed:
                         removed.discard(sk)
                     else:
